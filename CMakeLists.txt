@@ -45,11 +45,17 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    Components/ds3231/ds3231.c
+    Components/logic/fireplace.c
+    Components/max6675/max6675.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    Components/ds3231
+    Components/logic
+    Components/max6675
 )
 
 # Add project symbols (macros)
