@@ -46,15 +46,8 @@ int max6675_get_temperature(max6675_data_t * this)
 
 void max6675_serialize_spi_data(max6675_data_t * this)
 {
-	// Combine two bytes into 16-bit value (MSB first)
-	uint16_t raw_data = ((uint16_t)this->rx_buffer[0] << 8) | this->rx_buffer[1];
-
-	// Extract temperature bits (D14-D3), which is bits 14 down to 3
-	this->temperature = (raw_data >> 3) & 0x0FFF;  // 12-bit mask
-
-	// Convert from 0.25°C units to °C
+	this->temperature = ((uint32_t)this->rx_buffer[0] >> 3);
+	this->temperature |= ((uint32_t)this->rx_buffer[1] << 5);
 	this->temperature = this->temperature / 4;
-
-	// Check thermocouple connection (bit D2)
-	this->conection_open = ((raw_data & 0x04) != 0);
+	this->conection_open = ((this->rx_buffer[0] & 0x04) == 0x04);
 }

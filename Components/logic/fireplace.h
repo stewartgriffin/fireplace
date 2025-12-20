@@ -25,7 +25,7 @@ extern "C" {
 /**************************************    GLOBAL FUNCTION DECLARATIONS      ******************************************/
 void fireplace_init(void);
 void fireplace_main(void);
-void clock_i2_interrupt(void);
+void clock_i2c_interrupt(void);
 /* CPP GUARD END */
 #ifdef __cplusplus
 }

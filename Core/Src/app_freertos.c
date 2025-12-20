@@ -22,6 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "fireplace.h"
 
 /* USER CODE END Includes */
 
@@ -104,9 +105,12 @@ void MX_FREERTOS_Init(void) {
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN defaultTask */
+  fireplace_init();
   /* Infinite loop */
   for(;;)
-  {
+  {	
+    fireplace_main();
+
     osDelay(1);
   }
   /* USER CODE END defaultTask */
