@@ -10,6 +10,7 @@
 
 /**************************************           INCLUDE FILES              ******************************************/
 #include "pcf8574.h"
+#include <stddef.h>
 
 /**************************************           DEFINES                    ******************************************/
 #define PCF8574_READ_PERIOD_MS 50  // Period in milliseconds between reads
@@ -25,16 +26,18 @@
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 void pcf8574_init(pcf8574_data_t * this,
-		int (* i2c_write)(uint8_t mem_addr, uint8_t *data, uint16_t data_size))
+		int (* i2c_write)(uint8_t mem_addr, uint8_t *data, uint16_t data_size),
+		void (* write_complete_callback)(void))
 {
 	this->i2c_write = i2c_write;
+	this->write_complete_callback = write_complete_callback;
 	this->write_request = false;
 	this->write_in_progress = false;
 	this->tick_timer = 0;
 	this->output_state = 0xFF;  // All pins high (default state)
 }
 
-void pcf8574_main(pcf8574_data_t * this, uint32_t call_period_ms)
+void pcf8574_main(pcf8574_data_t * this)
 {
 	// Handle write request
 	if (this->write_request == true)
@@ -45,22 +48,22 @@ void pcf8574_main(pcf8574_data_t * this, uint32_t call_period_ms)
 		this->i2c_write(0x00, this->tx_buffer, 1);
 		return;
 	}
-
-	// Increment tick timer
-	this->tick_timer += call_period_ms;
-
-	// Wrap timer to prevent overflow
-	if (this->tick_timer >= PCF8574_TIMER_MAX_MS)
-	{
-		this->tick_timer = 0;
-	}
 }
 
 void pcf8574_interrupt(pcf8574_data_t * this)
 {
+	// Check if this was a write operation before clearing the flag
+	bool was_write = this->write_in_progress;
+
 	if (this->write_in_progress == true)
 	{
 		this->write_in_progress = false;
+	}
+
+	// Call the registered callback if this was a write operation
+	if (was_write && this->write_complete_callback != NULL)
+	{
+		this->write_complete_callback();
 	}
 }
 

@@ -110,8 +110,6 @@ void StartDefaultTask(void *argument)
   for(;;)
   {	
     fireplace_main();
-
-    osDelay(1);
   }
   /* USER CODE END defaultTask */
 }

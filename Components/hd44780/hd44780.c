@@ -10,6 +10,7 @@
 
 /**************************************           INCLUDE FILES              ******************************************/
 #include "hd44780.h"
+#include "stm32h5xx_hal.h"
 #include <stddef.h>
 
 /**************************************           DEFINES                    ******************************************/
@@ -25,8 +26,8 @@
 
 // HD44780 Timing requirements (in milliseconds)
 #define HD44780_DELAY_INIT              15    // Initial delay after power-on
-#define HD44780_DELAY_LONG_CMD          2    // Clear display, Return home
-#define HD44780_DELAY_SHORT_CMD         1     // All other commands and data
+#define HD44780_DELAY_LONG_CMD          2     // Clear display, Return home
+#define HD44780_DELAY_SHORT_CMD         0     // All other commands (I2C transfer time provides sufficient delay)
 
 // Entry Mode flags
 #define HD44780_ENTRY_INCREMENT         0x02  // I/D bit: 1=increment, 0=decrement
@@ -74,6 +75,7 @@ void hd44780_init(hd44780_data_t * this,
 	this->columns = columns;
 	this->update_pins = update_pins;
 	this->tick_timer = 0;
+	this->last_tick = HAL_GetTick();
 	this->delay = 0;
 	this->init_step = 0;
 	this->transfer_complete = true;  // Set true initially so UNINIT state can run
@@ -88,10 +90,15 @@ void hd44780_init(hd44780_data_t * this,
 	this->buffer_ptr = NULL;
 }
 
-void hd44780_main(hd44780_data_t * this, uint32_t call_period_ms)
+void hd44780_main(hd44780_data_t * this)
 {
+	// Calculate elapsed time since last call
+	uint32_t current_tick = HAL_GetTick();
+	uint32_t elapsed_ms = current_tick - this->last_tick;
+	this->last_tick = current_tick;
+
 	// Update tick timer
-	this->tick_timer += call_period_ms;
+	this->tick_timer += elapsed_ms;
 
 	// Wait for I2C transfer to complete
 	if (!this->transfer_complete)
@@ -100,9 +107,9 @@ void hd44780_main(hd44780_data_t * this, uint32_t call_period_ms)
 	}
 
 	// Decrement delay timer
-	if (this->delay > call_period_ms)
+	if (this->delay > elapsed_ms)
 	{
-		this->delay -= call_period_ms;
+		this->delay -= elapsed_ms;
 	}
 	else
 	{

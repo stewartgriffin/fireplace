@@ -11,6 +11,7 @@
 /**************************************           INCLUDE FILES              ******************************************/
 #include "stdint.h"
 #include "stdbool.h"
+#include "stm32h5xx_hal.h"
 #include "max6675.h"
 #include "spi.h"
 
@@ -18,6 +19,7 @@
 #include "pcf8574.h"
 #include "hd44780.h"
 #include "i2c.h"
+#include "gui.h"
 
 /**************************************           DEFINES                    ******************************************/
 
@@ -26,7 +28,6 @@
 /**************************************           CONSTANTS                  ******************************************/
 
 /**************************************           LOCAL VARIABLES            ******************************************/
-int main_function_timer = 0;
 max6675_data_t thermocouple;
 int current_temperature = 0;
 
@@ -34,58 +35,42 @@ ds3231_data_t clock;
 pcf8574_data_t gpio_expander;
 hd44780_data_t display;
 
-// Test display buffer (20x4 = 80 characters)
-static char display_buffer[80] =
-	"    Hello World!    "
-	"  Display Test 123  "
-	"                    "
-	"   HD44780 Ready    ";
-static bool display_test_written = false;
-
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size);
 int clock_i2c_send(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
 int clock_i2c_receive(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
 int gpio_expander_i2c_send(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
 void display_update_pins(uint8_t d4_d7, bool rs, bool e);
-
+void fireplace_update_gui(void);
+void gpio_expander_write_complete_callback(void);
+	
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 void fireplace_init(void)
 {
 	max6675_init(&thermocouple, thermocouple_spi_send_receive_wrapper);
 	ds3231_init(&clock, clock_i2c_receive, clock_i2c_send);
-	pcf8574_init(&gpio_expander, gpio_expander_i2c_send);
+	pcf8574_init(&gpio_expander, gpio_expander_i2c_send, gpio_expander_write_complete_callback);
 	hd44780_init(&display, 4, 20, display_update_pins);
 }
 
 void fireplace_main(void)
 {
-	if (main_function_timer % 1000 == 0)
+	// All components now manage their own timing using HAL_GetTick()
+	// Just call them as fast as possible - they will handle their own intervals
+	max6675_main(&thermocouple);
+	ds3231_main(&clock);
+	pcf8574_main(&gpio_expander);
+	hd44780_main(&display);
+
+	fireplace_update_gui();
+
+	if (HAL_GetTick() % 1000 == 0)
 	{
-		max6675_main(&thermocouple);
+		hd44780_write_buffer(&display,gui_get_screen_buffer());
 	}
 
-	if (main_function_timer % 1 == 0)
-	{
-		ds3231_main(&clock, 1);
-		pcf8574_main(&gpio_expander, 1);
-		hd44780_main(&display, 1);
-	}
-
-	// Test: Write to display once after initialization (after 2 seconds)
-	if (main_function_timer == 9999 && !display_test_written)
-	{
-		hd44780_write_buffer(&display, display_buffer);
-		display_test_written = true;
-	}
 
 	current_temperature = max6675_get_temperature(&thermocouple);
-	main_function_timer++;
-
-	if (main_function_timer == 10000)
-	{
-		main_function_timer = 0;
-	}
 }
 
 void clock_i2c_interrupt(void)
@@ -95,18 +80,8 @@ void clock_i2c_interrupt(void)
 
 void gpio_expander_i2c_interrupt(void)
 {
-	// Check if this was a write operation (HD44780 command)
-	// before pcf8574_interrupt() clears the flag
-	bool was_write = gpio_expander.write_in_progress;
-
+	// pcf8574_interrupt will call the registered callback if this was a write operation
 	pcf8574_interrupt(&gpio_expander);
-
-	// Only notify HD44780 if this was a write operation
-	// (don't notify for periodic PCF8574 reads)
-	if (was_write)
-	{
-		hd44780_transfer_complete(&display);
-	}
 }
 
 void display_i2c_interrupt(void)
@@ -114,10 +89,15 @@ void display_i2c_interrupt(void)
 	hd44780_transfer_complete(&display);
 }
 
+void thermocouple_spi_interrupt(void)
+{
+	max6675_spi_irq_handler(&thermocouple);
+}
+
 /**************************************      LOCAL FUNCTION DEFINITIONS      ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size)
 {
-	return HAL_SPI_TransmitReceive(&hspi2, tx_buffer, rx_buffer, size, 1000);
+	return HAL_SPI_TransmitReceive_IT(&hspi2, tx_buffer, rx_buffer, size);
 }
 
 int clock_i2c_send(uint8_t mem_addr, uint8_t *data, uint16_t data_size)
@@ -169,4 +149,24 @@ void display_update_pins(uint8_t d4_d7, bool rs, bool e)
 
 	// Write to PCF8574
 	pcf8574_write(&gpio_expander, output);
+}
+
+void fireplace_update_gui(void)
+{
+	gui_set_time(ds3231_get_time(&clock));
+
+	gui_set_fireplace(123);
+
+	gui_set_ventilation(3);
+
+	gui_set_ppm(20);
+
+	gui_set_fireplace_temperature(122);
+}
+
+void gpio_expander_write_complete_callback(void)
+{
+	// Called when PCF8574 I2C write completes
+	// This notifies HD44780 that the pin update is complete
+	hd44780_transfer_complete(&display);
 }

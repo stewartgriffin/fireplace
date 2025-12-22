@@ -35,6 +35,7 @@ typedef struct
 typedef struct
 {
 	uint32_t tick_timer;
+	uint32_t last_tick;  // Last HAL_GetTick() value for calculating elapsed time
 	bool time_update_request;
 	bool time_update_waiting_for_interrupt;
 	bool alarm1_update_request;
@@ -88,13 +89,14 @@ typedef struct
 void ds3231_init(ds3231_data_t * this,
 		int (* i2c_read)(uint8_t mem_addr, uint8_t *data, uint16_t data_size),
 		int (* i2c_write)(uint8_t mem_addr, uint8_t *data, uint16_t data_size));
-void ds3231_main(ds3231_data_t * this, uint32_t call_period_ms);
+void ds3231_main(ds3231_data_t * this);
 void ds3231_interrupt(ds3231_data_t * this);
 void ds3231_set_time(ds3231_data_t * this, time_data_t * new_time);
 void ds3231_set_alarm1(ds3231_data_t * this, uint8_t seconds, uint8_t minutes, uint8_t hours, uint8_t day_date);
 void ds3231_set_alarm2(ds3231_data_t * this, uint8_t minutes, uint8_t hours, uint8_t day_date);
 void ds3231_read_alarm1(ds3231_data_t * this);
 void ds3231_read_alarm2(ds3231_data_t * this);
+time_data_t * ds3231_get_time(ds3231_data_t * this);
 
 /* CPP GUARD END */
 #ifdef __cplusplus

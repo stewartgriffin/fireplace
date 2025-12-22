@@ -50,6 +50,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Components/logic/fireplace.c
     Components/max6675/max6675.c
     Components/pcf8574/pcf8574.c
+    Components/gui/gui.c
 )
 
 # Add include paths
@@ -60,6 +61,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Components/logic
     Components/max6675
     Components/pcf8574
+    Components/gui
 )
 
 # Add project symbols (macros)

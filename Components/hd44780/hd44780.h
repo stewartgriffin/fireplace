@@ -43,7 +43,8 @@ typedef enum
 typedef struct
 {
 	uint32_t tick_timer;
-	uint32_t delay;  // Delay countdown in ms before next command
+	uint32_t last_tick;  // Last HAL_GetTick() value for calculating elapsed time
+	uint32_t delay;      // Delay countdown in ms before next command
 	uint8_t init_step;
 	bool transfer_complete;  // Set by interrupt when I2C transfer completes
 
@@ -78,7 +79,7 @@ void hd44780_init(hd44780_data_t * this,
 		uint8_t rows,
 		uint8_t columns,
 		void (* update_pins)(uint8_t d4_d7, bool rs, bool e));
-void hd44780_main(hd44780_data_t * this, uint32_t call_period_ms);
+void hd44780_main(hd44780_data_t * this);
 void hd44780_transfer_complete(hd44780_data_t * this);
 int hd44780_write_buffer(hd44780_data_t * this, const char * buffer);
 

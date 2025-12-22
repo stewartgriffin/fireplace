@@ -30,6 +30,7 @@ typedef struct
 	uint8_t output_state;  // Current output state of all 8 pins
 
 	int (* i2c_write)(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
+	void (* write_complete_callback)(void);  // Callback when I2C write completes
 
 	uint8_t tx_buffer[1];
 }pcf8574_data_t;
@@ -38,8 +39,9 @@ typedef struct
 
 /**************************************    GLOBAL FUNCTION DECLARATIONS      ******************************************/
 void pcf8574_init(pcf8574_data_t * this,
-		int (* i2c_write)(uint8_t mem_addr, uint8_t *data, uint16_t data_size));
-void pcf8574_main(pcf8574_data_t * this, uint32_t call_period_ms);
+		int (* i2c_write)(uint8_t mem_addr, uint8_t *data, uint16_t data_size),
+		void (* write_complete_callback)(void));
+void pcf8574_main(pcf8574_data_t * this);
 void pcf8574_interrupt(pcf8574_data_t * this);
 void pcf8574_write(pcf8574_data_t * this, uint8_t data);
 

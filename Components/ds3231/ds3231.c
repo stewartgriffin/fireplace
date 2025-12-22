@@ -10,6 +10,7 @@
 
 /**************************************           INCLUDE FILES              ******************************************/
 #include "ds3231.h"
+#include "stm32h5xx_hal.h"
 
 /**************************************           DEFINES                    ******************************************/
 #define DS3231_CURRENT_TIME_START_ADDRESS 0x00
@@ -66,12 +67,13 @@ void ds3231_init(ds3231_data_t * this,
 	this->alarm2_read_request = false;
 	this->alarm2_read_in_progress = false;
 	this->tick_timer = 0;
+	this->last_tick = HAL_GetTick();
 
 	// Request read of status registers to check oscillator stop flag
 	this->i2c_read(DS3231_STATUS_START_ADDRESS, this->rx_buffer, DS3231_STATUS_LENGTH);
 }
 
-void ds3231_main(ds3231_data_t * this, uint32_t call_period_ms)
+void ds3231_main(ds3231_data_t * this)
 {
 	// Check if we need to wake up the oscillator
 	if (this->oscillator_not_started == true)
@@ -130,6 +132,11 @@ void ds3231_main(ds3231_data_t * this, uint32_t call_period_ms)
 		return;
 	}
 
+	// Calculate elapsed time since last call
+	uint32_t current_tick = HAL_GetTick();
+	uint32_t elapsed_ms = current_tick - this->last_tick;
+	this->last_tick = current_tick;
+
 	// Read current time at specified period
 	if (this->tick_timer % DS3231_TIME_READ_PERIOD_MS == 0)
 	{
@@ -137,15 +144,15 @@ void ds3231_main(ds3231_data_t * this, uint32_t call_period_ms)
 		this->i2c_read(DS3231_CURRENT_TIME_START_ADDRESS, this->rx_buffer, DS3231_CURRENT_TIME_LENGTH);
 	}
 
-	// Read status registers at specified period
-	if (this->tick_timer % DS3231_STATUS_READ_PERIOD_MS == 0)
+	// Read status registers at specified period (offset by 50ms to avoid collision)
+	if ((this->tick_timer + 50) % DS3231_STATUS_READ_PERIOD_MS == 0)
 	{
 		this->status_read_in_progress = true;
 		this->i2c_read(DS3231_STATUS_START_ADDRESS, this->rx_buffer, DS3231_STATUS_LENGTH);
 	}
 
 	// Increment tick timer
-	this->tick_timer += call_period_ms;
+	this->tick_timer += elapsed_ms;
 
 	// Wrap timer to prevent overflow
 	if (this->tick_timer >= DS3231_TIMER_MAX_MS)
@@ -271,6 +278,12 @@ void ds3231_read_alarm2(ds3231_data_t * this)
 {
 	// Set the flag to request alarm2 read on next ds3231_main() call
 	this->alarm2_read_request = true;
+}
+
+time_data_t * ds3231_get_time(ds3231_data_t * this)
+{
+	// Return pointer to current time structure
+	return &this->current_time;
 }
 
 /**************************************      LOCAL FUNCTION DEFINITIONS      ******************************************/
