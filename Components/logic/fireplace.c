@@ -73,7 +73,7 @@ void fireplace_main(void)
 	}
 
 	// Test: Write to display once after initialization (after 2 seconds)
-	if (main_function_timer == 2000 && !display_test_written)
+	if (main_function_timer == 9999 && !display_test_written)
 	{
 		hd44780_write_buffer(&display, display_buffer);
 		display_test_written = true;

@@ -24,15 +24,15 @@
 #define HD44780_CMD_SET_DDRAM_ADDR      0x80
 
 // HD44780 Timing requirements (in milliseconds)
-#define HD44780_DELAY_INIT              30    // Initial delay after power-on
-#define HD44780_DELAY_LONG_CMD          10    // Clear display, Return home
-#define HD44780_DELAY_SHORT_CMD         5     // All other commands and data
+#define HD44780_DELAY_INIT              15    // Initial delay after power-on
+#define HD44780_DELAY_LONG_CMD          2    // Clear display, Return home
+#define HD44780_DELAY_SHORT_CMD         1     // All other commands and data
 
 // Entry Mode flags
-#define HD44780_ENTRY_SHIFT_INCREMENT   0x01
-#define HD44780_ENTRY_SHIFT_DECREMENT   0x00
-#define HD44780_ENTRY_DISPLAY_SHIFT     0x01
-#define HD44780_ENTRY_DISPLAY_NO_SHIFT  0x00
+#define HD44780_ENTRY_INCREMENT         0x02  // I/D bit: 1=increment, 0=decrement
+#define HD44780_ENTRY_DECREMENT         0x00
+#define HD44780_ENTRY_SHIFT_ON          0x01  // S bit: 1=shift display, 0=cursor moves
+#define HD44780_ENTRY_SHIFT_OFF         0x00
 
 // Display Control flags
 #define HD44780_DISPLAY_ON              0x04
@@ -193,8 +193,8 @@ void hd44780_main(hd44780_data_t * this, uint32_t call_period_ms)
 					case 7:
 					{
 						// Entry mode set: Increment cursor, no display shift
-						this->current_byte = HD44780_CMD_ENTRY_MODE_SET | HD44780_ENTRY_SHIFT_INCREMENT |
-						                     HD44780_ENTRY_DISPLAY_NO_SHIFT;
+						this->current_byte = HD44780_CMD_ENTRY_MODE_SET | HD44780_ENTRY_INCREMENT |
+						                     HD44780_ENTRY_SHIFT_OFF;
 						this->current_rs = false;
 						uint8_t nibble = (this->current_byte >> 4) & 0x0F;
 						this->transfer_complete = false;
