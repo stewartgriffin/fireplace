@@ -30,9 +30,17 @@ int main_function_timer = 0;
 max6675_data_t thermocouple;
 int current_temperature = 0;
 
-static ds3231_data_t clock;
-static pcf8574_data_t gpio_expander;
-static hd44780_data_t display;
+ds3231_data_t clock;
+pcf8574_data_t gpio_expander;
+hd44780_data_t display;
+
+// Test display buffer (20x4 = 80 characters)
+static char display_buffer[80] =
+	"    Hello World!    "
+	"  Display Test 123  "
+	"                    "
+	"   HD44780 Ready    ";
+static bool display_test_written = false;
 
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size);
@@ -65,10 +73,17 @@ void fireplace_main(void)
 		hd44780_main(&display, 1);
 	}
 
+	// Test: Write to display once after initialization (after 2 seconds)
+	if (main_function_timer == 2000 && !display_test_written)
+	{
+		hd44780_write_buffer(&display, display_buffer);
+		display_test_written = true;
+	}
+
 	current_temperature = max6675_get_temperature(&thermocouple);
 	main_function_timer++;
 
-	if (main_function_timer == 1000)
+	if (main_function_timer == 10000)
 	{
 		main_function_timer = 0;
 	}
@@ -81,7 +96,18 @@ void clock_i2c_interrupt(void)
 
 void gpio_expander_i2c_interrupt(void)
 {
+	// Check if this was a write operation (HD44780 command)
+	// before pcf8574_interrupt() clears the flag
+	bool was_write = gpio_expander.write_in_progress;
+
 	pcf8574_interrupt(&gpio_expander);
+
+	// Only notify HD44780 if this was a write operation
+	// (don't notify for periodic PCF8574 reads)
+	if (was_write)
+	{
+		hd44780_transfer_complete(&display);
+	}
 }
 
 void display_i2c_interrupt(void)

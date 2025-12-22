@@ -82,7 +82,7 @@ void MX_I2C3_Init(void)
 
   /* USER CODE END I2C3_Init 1 */
   hi2c3.Instance = I2C3;
-  hi2c3.Init.Timing = 0x00300F38;
+  hi2c3.Init.Timing = 0x00707CBB;
   hi2c3.Init.OwnAddress1 = 0;
   hi2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -261,10 +261,14 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* i2cHandle)
 /* USER CODE BEGIN 1 */
 
 extern void clock_i2c_interrupt(void);
+extern void gpio_expander_i2c_interrupt(void);
+extern void display_i2c_interrupt(void);
 
 // Global variable to track I2C errors (for debugging)
 volatile uint32_t i2c_error_count = 0;
 volatile uint32_t i2c_last_error = 0;
+volatile uint32_t i2c3_error_count = 0;
+volatile uint32_t i2c3_last_error = 0;
 
 void I2C2_Recovery(void)
 {
@@ -321,6 +325,22 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
     }
 }
 
+void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+    if (hi2c->Instance == I2C3)
+    {
+        gpio_expander_i2c_interrupt();
+    }
+}
+
+void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+    if (hi2c->Instance == I2C3)
+    {
+        gpio_expander_i2c_interrupt();
+    }
+}
+
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
     if (hi2c->Instance == I2C2)
@@ -328,6 +348,11 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
         i2c_error_count++;
         i2c_last_error = hi2c->ErrorCode;
         // I2C2_Recovery();
+    }
+    else if (hi2c->Instance == I2C3)
+    {
+        i2c3_error_count++;
+        i2c3_last_error = hi2c->ErrorCode;
     }
 }
 

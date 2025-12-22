@@ -23,22 +23,34 @@ extern "C" {
 /**************************************           DATA TYPES                 ******************************************/
 typedef enum
 {
+	HD44780_STATE_UNINIT,
 	HD44780_STATE_IDLE,
-	HD44780_STATE_SEND_HIGH_NIBBLE,
-	HD44780_STATE_SEND_LOW_NIBBLE,
-	HD44780_STATE_WAIT_TRANSFER
+	HD44780_STATE_TRANSFER
 }hd44780_state_t;
+
+typedef enum
+{
+	HD44780_TRANSFER_IDLE,
+	HD44780_TRANSFER_HIGH_NIBBLE_E_HIGH,
+	HD44780_TRANSFER_HIGH_NIBBLE_E_LOW,
+	HD44780_TRANSFER_LOW_NIBBLE_E_HIGH,
+	HD44780_TRANSFER_LOW_NIBBLE_E_LOW,
+	HD44780_TRANSFER_SINGLE_NIBBLE_E_HIGH,
+	HD44780_TRANSFER_SINGLE_NIBBLE_E_LOW
+}hd44780_transfer_state_t;
 
 typedef struct
 {
 	uint32_t tick_timer;
+	uint32_t last_command_time;
 	bool init_in_progress;
 	uint8_t init_step;
 
 	hd44780_state_t state;
+	hd44780_transfer_state_t transfer_state;
 	uint8_t current_byte;
+	uint8_t single_nibble_value;  // For storing nibble value during single-nibble init commands
 	bool current_rs;
-	bool high_nibble_sent;
 
 	// Display configuration
 	uint8_t rows;
