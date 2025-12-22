@@ -24,9 +24,9 @@
 #define HD44780_CMD_SET_DDRAM_ADDR      0x80
 
 // HD44780 Timing requirements (in milliseconds)
-#define HD44780_DELAY_INIT              15    // Initial delay after power-on
-#define HD44780_DELAY_LONG_CMD          2     // Clear display, Return home
-#define HD44780_DELAY_SHORT_CMD         1     // All other commands and data
+#define HD44780_DELAY_INIT              30    // Initial delay after power-on
+#define HD44780_DELAY_LONG_CMD          10    // Clear display, Return home
+#define HD44780_DELAY_SHORT_CMD         5     // All other commands and data
 
 // Entry Mode flags
 #define HD44780_ENTRY_SHIFT_INCREMENT   0x01
@@ -74,9 +74,9 @@ void hd44780_init(hd44780_data_t * this,
 	this->columns = columns;
 	this->update_pins = update_pins;
 	this->tick_timer = 0;
-	this->last_command_time = 0;
-	this->init_in_progress = false;
+	this->delay = 0;
 	this->init_step = 0;
+	this->transfer_complete = true;  // Set true initially so UNINIT state can run
 	this->state = HD44780_STATE_UNINIT;
 	this->transfer_state = HD44780_TRANSFER_IDLE;
 	this->current_byte = 0;
@@ -93,287 +93,305 @@ void hd44780_main(hd44780_data_t * this, uint32_t call_period_ms)
 	// Update tick timer
 	this->tick_timer += call_period_ms;
 
-	// ========== UNINIT STATE: Wait for power-on delay ==========
-	if (this->state == HD44780_STATE_UNINIT)
+	// Wait for I2C transfer to complete
+	if (!this->transfer_complete)
 	{
-		if (this->tick_timer < HD44780_DELAY_INIT)
-		{
-			return;  // Still waiting for power-on delay
-		}
-		// Power-on delay complete, move to IDLE and start init
-		this->state = HD44780_STATE_IDLE;
-		this->init_in_progress = true;
-		this->init_step = 0;
 		return;
 	}
 
-	// ========== TRANSFER STATE: Execute transfer state machine ==========
-	if (this->state == HD44780_STATE_TRANSFER)
+	// Decrement delay timer
+	if (this->delay > call_period_ms)
 	{
-		if (this->transfer_state == HD44780_TRANSFER_HIGH_NIBBLE_E_HIGH)
-		{
-			// Send high nibble with E=1
-			uint8_t nibble = (this->current_byte >> 4) & 0x0F;
-			this->update_pins(nibble, this->current_rs, true);
-			// Wait for I2C transfer complete callback
-			return;
-		}
-		else if (this->transfer_state == HD44780_TRANSFER_HIGH_NIBBLE_E_LOW)
-		{
-			// Clear E after high nibble
-			uint8_t nibble = (this->current_byte >> 4) & 0x0F;
-			this->update_pins(nibble, this->current_rs, false);
-			// Wait for I2C transfer complete callback
-			return;
-		}
-		else if (this->transfer_state == HD44780_TRANSFER_LOW_NIBBLE_E_HIGH)
-		{
-			// Send low nibble with E=1
-			uint8_t nibble = this->current_byte & 0x0F;
-			this->update_pins(nibble, this->current_rs, true);
-			// Wait for I2C transfer complete callback
-			return;
-		}
-		else if (this->transfer_state == HD44780_TRANSFER_LOW_NIBBLE_E_LOW)
-		{
-			// Clear E after low nibble
-			uint8_t nibble = this->current_byte & 0x0F;
-			this->update_pins(nibble, this->current_rs, false);
-			// Wait for I2C transfer complete callback
-			return;
-		}
-		else if (this->transfer_state == HD44780_TRANSFER_SINGLE_NIBBLE_E_HIGH)
-		{
-			// Send single nibble with E=1 (init only)
-			this->update_pins(this->single_nibble_value, false, true);
-			// Wait for I2C transfer complete callback
-			return;
-		}
-		else if (this->transfer_state == HD44780_TRANSFER_SINGLE_NIBBLE_E_LOW)
-		{
-			// Clear E after single nibble
-			this->update_pins(this->single_nibble_value, false, false);
-			// Wait for I2C transfer complete callback
-			return;
-		}
+		this->delay -= call_period_ms;
+	}
+	else
+	{
+		this->delay = 0;
 	}
 
-	// ========== IDLE STATE: Prepare next command ==========
-	if (this->state == HD44780_STATE_IDLE)
+	// Wait for delay before processing
+	if (this->delay > 0)
 	{
-		// Check if enough time has passed since last command
-		uint32_t time_since_last_cmd = this->tick_timer - this->last_command_time;
-		uint32_t required_delay = HD44780_DELAY_SHORT_CMD;
+		return;
+	}
 
-		// Determine required delay based on last command
-		if (this->current_byte == HD44780_CMD_CLEAR_DISPLAY ||
-		    this->current_byte == HD44780_CMD_RETURN_HOME)
+	// ========== STATE MACHINE ==========
+	if (this->state == HD44780_STATE_UNINIT)
+	{
+		// Wait for power-on delay
+		if (this->tick_timer >= HD44780_DELAY_INIT)
 		{
-			required_delay = HD44780_DELAY_LONG_CMD;
+			this->state = HD44780_STATE_INITIALIZING;
+			this->init_step = 0;
+			this->transfer_state = HD44780_TRANSFER_IDLE;
 		}
-
-		// Wait if not enough time has passed
-		if (time_since_last_cmd < required_delay)
+	}
+	else if (this->state == HD44780_STATE_INITIALIZING)
+	{
+		switch (this->transfer_state)
 		{
-			return;
-		}
+			case HD44780_TRANSFER_IDLE:
+				// Ready to start a new transfer - process next init step
+				switch (this->init_step)
+				{
+					case 0:
+					case 1:
+					case 2:
+						// First three: Function set (8-bit mode) - single nibble 0x03
+						this->single_nibble_value = 0x03;
+						this->transfer_complete = false;
+						this->update_pins(this->single_nibble_value, false, true);
+						this->transfer_state = HD44780_TRANSFER_SINGLE_NIBBLE_E_LOW;
+						return;
 
-		// Process buffer write if in progress
-		if (this->buffer_write_in_progress && this->buffer_write_index < this->buffer_write_total)
+					case 3:
+						// Fourth: Function set (4-bit mode) - single nibble 0x02
+						this->single_nibble_value = 0x02;
+						this->transfer_complete = false;
+						this->update_pins(this->single_nibble_value, false, true);
+						this->transfer_state = HD44780_TRANSFER_SINGLE_NIBBLE_E_LOW;
+						return;
+
+					case 4:
+					{
+						// Function set: 4-bit mode, 2 lines, 5x8 dots
+						this->current_byte = HD44780_CMD_FUNCTION_SET | HD44780_4BIT_MODE |
+						                     HD44780_2LINE | HD44780_5x8_DOTS;
+						this->current_rs = false;
+						uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+						this->transfer_complete = false;
+						this->update_pins(nibble, false, true);
+						this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+						return;
+					}
+
+					case 5:
+					{
+						// Display control: Display on, cursor off, blink off
+						this->current_byte = HD44780_CMD_DISPLAY_CONTROL | HD44780_DISPLAY_ON |
+						                     HD44780_CURSOR_OFF | HD44780_BLINK_OFF;
+						this->current_rs = false;
+						uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+						this->transfer_complete = false;
+						this->update_pins(nibble, false, true);
+						this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+						return;
+					}
+
+					case 6:
+					{
+						// Clear display
+						this->current_byte = HD44780_CMD_CLEAR_DISPLAY;
+						this->current_rs = false;
+						uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+						this->transfer_complete = false;
+						this->update_pins(nibble, false, true);
+						this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+						return;
+					}
+
+					case 7:
+					{
+						// Entry mode set: Increment cursor, no display shift
+						this->current_byte = HD44780_CMD_ENTRY_MODE_SET | HD44780_ENTRY_SHIFT_INCREMENT |
+						                     HD44780_ENTRY_DISPLAY_NO_SHIFT;
+						this->current_rs = false;
+						uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+						this->transfer_complete = false;
+						this->update_pins(nibble, false, true);
+						this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+						return;
+					}
+
+					case 8:
+						// Initialization complete! Move to IDLE
+						this->state = HD44780_STATE_IDLE;
+						break;
+
+					default:
+						this->state = HD44780_STATE_IDLE;
+						break;
+				}
+				break;
+
+			case HD44780_TRANSFER_HIGH_NIBBLE_E_LOW:
+				// Lower E for high nibble
+				{
+					uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+					this->transfer_complete = false;
+					this->update_pins(nibble, this->current_rs, false);
+					this->transfer_state = HD44780_TRANSFER_LOW_NIBBLE_E_HIGH;
+					return;
+				}
+
+			case HD44780_TRANSFER_LOW_NIBBLE_E_HIGH:
+				// Raise E for low nibble
+				{
+					uint8_t nibble = this->current_byte & 0x0F;
+					this->transfer_complete = false;
+					this->update_pins(nibble, this->current_rs, true);
+					this->transfer_state = HD44780_TRANSFER_LOW_NIBBLE_E_LOW;
+					return;
+				}
+
+			case HD44780_TRANSFER_LOW_NIBBLE_E_LOW:
+				// Lower E for low nibble - byte complete
+				{
+					uint8_t nibble = this->current_byte & 0x0F;
+					this->transfer_complete = false;
+					this->update_pins(nibble, this->current_rs, false);
+					this->transfer_state = HD44780_TRANSFER_IDLE;
+
+					// Set delay based on command
+					if (this->current_byte == HD44780_CMD_CLEAR_DISPLAY ||
+					    this->current_byte == HD44780_CMD_RETURN_HOME)
+					{
+						this->delay = HD44780_DELAY_LONG_CMD;
+					}
+					else
+					{
+						this->delay = HD44780_DELAY_SHORT_CMD;
+					}
+					this->init_step++;
+					return;
+				}
+
+			case HD44780_TRANSFER_SINGLE_NIBBLE_E_LOW:
+				// Lower E for single nibble
+				this->transfer_complete = false;
+				this->update_pins(this->single_nibble_value, false, false);
+				this->transfer_state = HD44780_TRANSFER_IDLE;
+				this->delay = HD44780_DELAY_SHORT_CMD;
+				this->init_step++;
+				return;
+
+			default:
+				this->transfer_state = HD44780_TRANSFER_IDLE;
+				break;
+		}
+	}
+	else if (this->state == HD44780_STATE_TRANSFER)
+	{
+		switch (this->transfer_state)
 		{
-			uint16_t chars_written = this->buffer_write_index % (this->columns + 1);
+			case HD44780_TRANSFER_IDLE:
+				// Ready to send next byte from buffer
+				if (this->buffer_write_in_progress && this->buffer_write_index < this->buffer_write_total)
+				{
+					uint16_t chars_written = this->buffer_write_index % (this->columns + 1);
 
-			if (chars_written == 0)
-			{
-				// Send cursor position command for new row
-				uint8_t row_offsets[] = {HD44780_ROW1_ADDR, HD44780_ROW2_ADDR,
-				                         HD44780_ROW3_ADDR, HD44780_ROW4_ADDR};
-				uint8_t current_row = this->buffer_write_index / (this->columns + 1);
-				this->current_byte = HD44780_CMD_SET_DDRAM_ADDR | row_offsets[current_row];
-				this->current_rs = false;
-				this->state = HD44780_STATE_TRANSFER;
-				this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_HIGH;
-				this->last_command_time = this->tick_timer;
-			}
-			else
-			{
-				// Send character data
-				uint16_t buffer_char_index = (this->buffer_write_index / (this->columns + 1)) *
-				                             this->columns + (chars_written - 1);
-				this->current_byte = (uint8_t)this->buffer_ptr[buffer_char_index];
-				this->current_rs = true;
-				this->state = HD44780_STATE_TRANSFER;
-				this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_HIGH;
-				this->last_command_time = this->tick_timer;
-			}
+					if (chars_written == 0)
+					{
+						// Send cursor position command for new row
+						uint8_t row_offsets[] = {HD44780_ROW1_ADDR, HD44780_ROW2_ADDR,
+						                         HD44780_ROW3_ADDR, HD44780_ROW4_ADDR};
+						uint8_t current_row = this->buffer_write_index / (this->columns + 1);
+						this->current_byte = HD44780_CMD_SET_DDRAM_ADDR | row_offsets[current_row];
+						this->current_rs = false;
+						uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+						this->transfer_complete = false;
+						this->update_pins(nibble, false, true);
+						this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+					}
+					else
+					{
+						// Send character data
+						uint16_t buffer_char_index = (this->buffer_write_index / (this->columns + 1)) *
+						                             this->columns + (chars_written - 1);
+						this->current_byte = (uint8_t)this->buffer_ptr[buffer_char_index];
+						this->current_rs = true;
+						uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+						this->transfer_complete = false;
+						this->update_pins(nibble, true, true);
+						this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+					}
 
-			this->buffer_write_index++;
+					this->buffer_write_index++;
 
-			// Check if we're done
-			if (this->buffer_write_index >= this->buffer_write_total)
-			{
-				this->buffer_write_in_progress = false;
-			}
+					// Check if we're done with the entire buffer
+					if (this->buffer_write_index >= this->buffer_write_total)
+					{
+						this->buffer_write_in_progress = false;
+					}
 
-			return;  // Start transfer next cycle
+					return;
+				}
+				else
+				{
+					// No more buffer data to process, return to IDLE
+					this->state = HD44780_STATE_IDLE;
+				}
+				break;
+
+			case HD44780_TRANSFER_HIGH_NIBBLE_E_LOW:
+				// Lower E for high nibble
+				{
+					uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+					this->transfer_complete = false;
+					this->update_pins(nibble, this->current_rs, false);
+					this->transfer_state = HD44780_TRANSFER_LOW_NIBBLE_E_HIGH;
+					return;
+				}
+
+			case HD44780_TRANSFER_LOW_NIBBLE_E_HIGH:
+				// Raise E for low nibble
+				{
+					uint8_t nibble = this->current_byte & 0x0F;
+					this->transfer_complete = false;
+					this->update_pins(nibble, this->current_rs, true);
+					this->transfer_state = HD44780_TRANSFER_LOW_NIBBLE_E_LOW;
+					return;
+				}
+
+			case HD44780_TRANSFER_LOW_NIBBLE_E_LOW:
+				// Lower E for low nibble - byte complete
+				{
+					uint8_t nibble = this->current_byte & 0x0F;
+					this->transfer_complete = false;
+					this->update_pins(nibble, this->current_rs, false);
+					this->transfer_state = HD44780_TRANSFER_IDLE;
+					this->delay = HD44780_DELAY_SHORT_CMD;
+					return;
+				}
+
+			default:
+				this->transfer_state = HD44780_TRANSFER_IDLE;
+				break;
 		}
-
-		// Process initialization if in progress
-		if (this->init_in_progress)
-		{
-			switch (this->init_step)
-			{
-				case 0:
-					// First: Function set (8-bit mode) - single nibble
-					this->single_nibble_value = 0x03;
-					this->state = HD44780_STATE_TRANSFER;
-					this->transfer_state = HD44780_TRANSFER_SINGLE_NIBBLE_E_HIGH;
-					this->last_command_time = this->tick_timer;
-					this->init_step++;
-					break;
-
-				case 1:
-					// Second: Function set (8-bit mode) - single nibble
-					this->single_nibble_value = 0x03;
-					this->state = HD44780_STATE_TRANSFER;
-					this->transfer_state = HD44780_TRANSFER_SINGLE_NIBBLE_E_HIGH;
-					this->last_command_time = this->tick_timer;
-					this->init_step++;
-					break;
-
-				case 2:
-					// Third: Function set (8-bit mode) - single nibble
-					this->single_nibble_value = 0x03;
-					this->state = HD44780_STATE_TRANSFER;
-					this->transfer_state = HD44780_TRANSFER_SINGLE_NIBBLE_E_HIGH;
-					this->last_command_time = this->tick_timer;
-					this->init_step++;
-					break;
-
-				case 3:
-					// Fourth: Function set (4-bit mode) - single nibble
-					this->single_nibble_value = 0x02;
-					this->state = HD44780_STATE_TRANSFER;
-					this->transfer_state = HD44780_TRANSFER_SINGLE_NIBBLE_E_HIGH;
-					this->last_command_time = this->tick_timer;
-					this->init_step++;
-					break;
-
-				case 4:
-					// Function set: 4-bit mode, 2 lines, 5x8 dots
-					this->current_byte = HD44780_CMD_FUNCTION_SET | HD44780_4BIT_MODE |
-					                     HD44780_2LINE | HD44780_5x8_DOTS;
-					this->current_rs = false;
-					this->state = HD44780_STATE_TRANSFER;
-					this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_HIGH;
-					this->last_command_time = this->tick_timer;
-					this->init_step++;
-					break;
-
-				case 5:
-					// Display control: Display on, cursor off, blink off
-					this->current_byte = HD44780_CMD_DISPLAY_CONTROL | HD44780_DISPLAY_ON |
-					                     HD44780_CURSOR_OFF | HD44780_BLINK_OFF;
-					this->current_rs = false;
-					this->state = HD44780_STATE_TRANSFER;
-					this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_HIGH;
-					this->last_command_time = this->tick_timer;
-					this->init_step++;
-					break;
-
-				case 6:
-					// Clear display
-					this->current_byte = HD44780_CMD_CLEAR_DISPLAY;
-					this->current_rs = false;
-					this->state = HD44780_STATE_TRANSFER;
-					this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_HIGH;
-					this->last_command_time = this->tick_timer;
-					this->init_step++;
-					break;
-
-				case 7:
-					// Entry mode set: Increment cursor, no display shift
-					this->current_byte = HD44780_CMD_ENTRY_MODE_SET | HD44780_ENTRY_SHIFT_INCREMENT |
-					                     HD44780_ENTRY_DISPLAY_NO_SHIFT;
-					this->current_rs = false;
-					this->state = HD44780_STATE_TRANSFER;
-					this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_HIGH;
-					this->last_command_time = this->tick_timer;
-					this->init_step++;
-					this->init_in_progress = false;  // Done!
-					break;
-
-				default:
-					this->init_in_progress = false;
-					break;
-			}
-		}
+	}
+	else if (this->state == HD44780_STATE_IDLE)
+	{
+		// Just waiting, nothing to do
 	}
 }
 
 void hd44780_transfer_complete(hd44780_data_t * this)
 {
 	// This callback is called when the I2C transfer to PCF8574 completes
-	// Advance the transfer state machine to the next step
-
-	if (this->state != HD44780_STATE_TRANSFER)
-	{
-		return;  // Spurious callback
-	}
-
-	// Advance transfer state machine
-	switch (this->transfer_state)
-	{
-		case HD44780_TRANSFER_HIGH_NIBBLE_E_HIGH:
-			// Just sent high nibble with E=1, now clear E
-			this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
-			break;
-
-		case HD44780_TRANSFER_HIGH_NIBBLE_E_LOW:
-			// Just cleared E after high nibble, now send low nibble
-			this->transfer_state = HD44780_TRANSFER_LOW_NIBBLE_E_HIGH;
-			break;
-
-		case HD44780_TRANSFER_LOW_NIBBLE_E_HIGH:
-			// Just sent low nibble with E=1, now clear E
-			this->transfer_state = HD44780_TRANSFER_LOW_NIBBLE_E_LOW;
-			break;
-
-		case HD44780_TRANSFER_LOW_NIBBLE_E_LOW:
-			// Transfer complete! Return to IDLE
-			this->transfer_state = HD44780_TRANSFER_IDLE;
-			this->state = HD44780_STATE_IDLE;
-			break;
-
-		case HD44780_TRANSFER_SINGLE_NIBBLE_E_HIGH:
-			// Just sent single nibble with E=1, now clear E
-			this->transfer_state = HD44780_TRANSFER_SINGLE_NIBBLE_E_LOW;
-			break;
-
-		case HD44780_TRANSFER_SINGLE_NIBBLE_E_LOW:
-			// Single nibble transfer complete! Return to IDLE
-			this->transfer_state = HD44780_TRANSFER_IDLE;
-			this->state = HD44780_STATE_IDLE;
-			break;
-
-		default:
-			// Unexpected state, return to IDLE
-			this->transfer_state = HD44780_TRANSFER_IDLE;
-			this->state = HD44780_STATE_IDLE;
-			break;
-	}
+	// Simply set the flag - state management happens in hd44780_main
+	this->transfer_complete = true;
 }
 
-void hd44780_write_buffer(hd44780_data_t * this, const char * buffer)
+int hd44780_write_buffer(hd44780_data_t * this, const char * buffer)
 {
-	if (this->state == HD44780_STATE_IDLE && !this->buffer_write_in_progress)
+	// Only accept new buffer write when in IDLE state and not already writing
+	if (this->state != HD44780_STATE_IDLE || this->buffer_write_in_progress)
 	{
-		this->buffer_ptr = buffer;
-		this->buffer_write_index = 0;
-		// Total includes: rows * (1 command + columns characters)
-		this->buffer_write_total = this->rows * (this->columns + 1);
-		this->buffer_write_in_progress = true;
+		return -1;  // Error: busy or not ready
 	}
+
+	this->buffer_ptr = buffer;
+	this->buffer_write_index = 0;
+	// Total includes: rows * (1 command + columns characters)
+	this->buffer_write_total = this->rows * (this->columns + 1);
+	this->buffer_write_in_progress = true;
+
+	// Move to TRANSFER state to start processing the buffer
+	this->state = HD44780_STATE_TRANSFER;
+	this->transfer_state = HD44780_TRANSFER_IDLE;
+	this->delay = 0;
+
+	return 0;  // Success
 }
 
 /**************************************      LOCAL FUNCTION DEFINITIONS      ******************************************/

@@ -47,7 +47,6 @@ int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buff
 int clock_i2c_send(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
 int clock_i2c_receive(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
 int gpio_expander_i2c_send(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
-int gpio_expander_i2c_receive(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
 void display_update_pins(uint8_t d4_d7, bool rs, bool e);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
@@ -55,7 +54,7 @@ void fireplace_init(void)
 {
 	max6675_init(&thermocouple, thermocouple_spi_send_receive_wrapper);
 	ds3231_init(&clock, clock_i2c_receive, clock_i2c_send);
-	pcf8574_init(&gpio_expander, gpio_expander_i2c_receive, gpio_expander_i2c_send);
+	pcf8574_init(&gpio_expander, gpio_expander_i2c_send);
 	hd44780_init(&display, 4, 20, display_update_pins);
 }
 
