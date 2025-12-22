@@ -163,20 +163,6 @@ void DebugMon_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles EXTI Line13 interrupt.
-  */
-void EXTI13_IRQHandler(void)
-{
-  /* USER CODE BEGIN EXTI13_IRQn 0 */
-
-  /* USER CODE END EXTI13_IRQn 0 */
-  BSP_PB_IRQHandler(BUTTON_USER);
-  /* USER CODE BEGIN EXTI13_IRQn 1 */
-
-  /* USER CODE END EXTI13_IRQn 1 */
-}
-
-/**
   * @brief This function handles TIM1 Update interrupt.
   */
 void TIM1_UP_IRQHandler(void)
@@ -196,7 +182,6 @@ void TIM1_UP_IRQHandler(void)
 void I2C2_EV_IRQHandler(void)
 {
   /* USER CODE BEGIN I2C2_EV_IRQn 0 */
-  clock_i2c_interrupt();
   /* USER CODE END I2C2_EV_IRQn 0 */
   HAL_I2C_EV_IRQHandler(&hi2c2);
   /* USER CODE BEGIN I2C2_EV_IRQn 1 */
