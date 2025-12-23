@@ -49,11 +49,17 @@ This is an intelligent controller for a fireplace and house ventilation system. 
 
 ```
 Components/
-├── hd44780/          # LCD display driver
+├── ds3231/           # DS3231 RTC driver
+├── gui/              # GUI system with focus and blinking fields
+├── hd44780/          # HD44780 LCD display driver
+├── max6675/          # MAX6675 thermocouple driver
+├── pcf8574/          # PCF8574 I2C GPIO expander driver
+├── ui/               # UI module with button handling and callbacks
 ├── logic/            # Main application logic (fireplace.c)
 Core/
 ├── Src/              # STM32 HAL and peripheral initialization
-│   └── i2c.c        # I2C configuration
+│   ├── i2c.c        # I2C configuration
+│   └── spi.c        # SPI configuration
 fireplace.ioc         # STM32CubeMX project configuration
 ```
 
@@ -62,17 +68,22 @@ fireplace.ioc         # STM32CubeMX project configuration
 **Development Stage**: Core features working
 
 ### Completed Features
-- ✅ SPI communication with MAX6675 thermocouple
+- ✅ SPI communication with MAX6675 thermocouple (interrupt-driven)
 - ✅ Basic peripheral initialization
 - ✅ FreeRTOS integration
-- ✅ I2C configuration
+- ✅ I2C configuration and communication
+- ✅ HD44780 LCD display integration (via PCF8574 I2C expander)
+- ✅ DS3231 RTC integration for timekeeping
+- ✅ GUI system with focus management and field blinking
+- ✅ UI module with button handling (up, down, left, right)
+- ✅ Callback-based event system for button presses
+- ✅ Real-time temperature reading from MAX6675
 
 ### In Development
-- HD44780 LCD display integration
-- Fireplace temperature monitoring logic
-- Air flap control logic
-- DS3231 RTC integration
-- Scheduling system for ventilation
+- Fireplace temperature monitoring logic and control algorithms
+- Air flap control logic with servo motors
+- Scheduling system for ventilation based on RTC
+- Integration of all components into cohesive control system
 
 ### Planned Features
 - Air quality sensor integration

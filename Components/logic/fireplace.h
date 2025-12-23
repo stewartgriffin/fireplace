@@ -28,6 +28,8 @@ void fireplace_main(void);
 void clock_i2c_interrupt(void);
 void gpio_expander_i2c_interrupt(void);
 void display_i2c_interrupt(void);
+void thermocouple_spi_interrupt(void);
+
 /* CPP GUARD END */
 #ifdef __cplusplus
 }
