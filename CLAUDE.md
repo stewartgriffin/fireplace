@@ -86,10 +86,32 @@ fireplace.ioc         # STM32CubeMX project configuration
 - Integration of all components into cohesive control system
 
 ### Planned Features
-- Air quality sensor integration
+- Air quality sensor integration (PM2.5, CO2, or VOC sensors)
 - Intelligent scheduling based on air quality measurements
-- Advanced control algorithms
-- User interface on LCD
+- Advanced control algorithms for flap management
+- Enhanced user interface features (menus, settings)
+
+## User Interface System
+
+### UI Module (ui.c/ui.h)
+- **Button Input Handling**: Supports 4 directional buttons (up, down, left, right)
+- **Callback Architecture**: Event-driven design with registered callbacks
+  - `short_press_up()`, `short_press_down()`, `short_press_left()`, `short_press_right()`
+  - `long_press_left_and_right()` for special functions (e.g., entering time-set mode)
+- **Debouncing**: 50ms debounce time to filter mechanical switch noise
+- **Long Press Detection**: 1000ms threshold for long press recognition
+- **Data Structure Pattern**: Follows ds3231 driver pattern with function pointers in `ui_data_t` struct
+
+### GUI Module (gui.c/gui.h)
+- **Display Management**: Manages screen buffer for HD44780 LCD
+- **Focus System**: Supports field selection for editing time/date
+  - Focus modes: `GUI_FOCUS_HOUR`, `GUI_FOCUS_MINUTE`, `GUI_FOCUS_SECOND`, `GUI_FOCUS_DAY`, `GUI_FOCUS_MONTH`, `GUI_FOCUS_YEAR`
+- **Field Blinking**: Visual feedback for focused field
+  - Configurable on/off timing (currently 800ms/800ms)
+  - Backup/restore mechanism to handle continuous display updates
+  - Works seamlessly with real-time data updates
+- **Time Display**: Formats and displays current time from DS3231 RTC
+- **Status Display**: Shows fireplace temperature, ventilation status, and sensor readings
 
 ## Technical Decisions & Preferences
 
@@ -112,10 +134,13 @@ fireplace.ioc         # STM32CubeMX project configuration
 
 ## Development Notes
 
-### Recent Progress
-- MAX6675 SPI communication successfully implemented
-- Peripherals configured in STM32CubeMX
-- FreeRTOS added to project
+### Recent Progress (2025-12-23)
+- ✅ UI module completed with callback-based button handling
+- ✅ GUI focus system implemented with field blinking for time editing
+- ✅ MAX6675 interrupt-driven SPI communication fully operational
+- ✅ HD44780 LCD display working via PCF8574 I2C GPIO expander
+- ✅ DS3231 RTC integrated and providing accurate timekeeping
+- ✅ All peripheral drivers following consistent data structure pattern
 
 ### Key Considerations
 - Real-time operation with FreeRTOS task management
@@ -123,6 +148,29 @@ fireplace.ioc         # STM32CubeMX project configuration
 - Servo position control for precise flap operation
 - Scheduled operations using DS3231 RTC
 - Future-proof design for air quality sensor integration
+
+### Important Technical Notes
+
+#### STM32CubeMX Interrupt Configuration
+**Critical**: When using interrupt-driven peripherals (SPI, I2C, UART), ensure the interrupt is enabled in STM32CubeMX:
+- Navigate to the peripheral configuration in CubeMX
+- Check the "Interrupt" checkbox under NVIC settings
+- Generate code to add proper IRQ handler to `stm32h5xx_it.c`
+- Missing this step causes `transfer_in_progress` flags to remain stuck
+- System may appear to work with debugger (timing changes) but fail in normal operation
+
+#### Interrupt Priority
+All peripheral interrupts use priority 5 to ensure FreeRTOS compatibility:
+- SPI2 (MAX6675): Priority 5
+- I2C2 (DS3231): Priority 5
+- I2C3 (PCF8574/HD44780): Priority 5
+- This matches `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`
+
+#### GUI Blinking with Continuous Updates
+The GUI blink system uses a backup/restore pattern to handle continuous data updates:
+- Focused field content backed up when visible
+- Update calls conditionally skip writing when field is hidden (blink off)
+- Allows real-time data refresh without interfering with blink effect
 
 ## Safety & Reliability Requirements
 
@@ -142,4 +190,4 @@ fireplace.ioc         # STM32CubeMX project configuration
 
 ---
 
-**Last Updated**: 2025-12-22
+**Last Updated**: 2025-12-23
