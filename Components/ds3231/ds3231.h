@@ -47,6 +47,7 @@ typedef struct
 	bool alarm2_read_request;
 	bool alarm2_read_in_progress;
 	bool time_read_in_progress;
+	bool time_read_paused;
 	bool status_read_in_progress;
 	bool oscillator_not_started;
 	bool oscillator_check_pending;
@@ -97,6 +98,8 @@ void ds3231_set_alarm2(ds3231_data_t * this, uint8_t minutes, uint8_t hours, uin
 void ds3231_read_alarm1(ds3231_data_t * this);
 void ds3231_read_alarm2(ds3231_data_t * this);
 time_data_t * ds3231_get_time(ds3231_data_t * this);
+void ds3231_pause_time_read(ds3231_data_t * this);
+void ds3231_resume_time_read(ds3231_data_t * this);
 
 /* CPP GUARD END */
 #ifdef __cplusplus

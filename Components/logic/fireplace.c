@@ -261,17 +261,26 @@ void ui_shift_focus_left_callback(void)
 		return;
 	}
 
-	// Cycle through time fields: HOUR <- MINUTE <- SECOND
+	// Cycle through all time/date fields left: HOUR <- MINUTE <- SECOND <- DAY <- MONTH <- YEAR
 	switch (current_focus)
 	{
 		case GUI_FOCUS_HOUR:
-			current_focus = GUI_FOCUS_SECOND;
+			current_focus = GUI_FOCUS_MINUTE;
 			break;
 		case GUI_FOCUS_MINUTE:
-			current_focus = GUI_FOCUS_HOUR;
+			current_focus = GUI_FOCUS_SECOND;
 			break;
 		case GUI_FOCUS_SECOND:
-			current_focus = GUI_FOCUS_MINUTE;
+			current_focus = GUI_FOCUS_DAY;
+			break;
+		case GUI_FOCUS_DAY:
+			current_focus = GUI_FOCUS_MONTH;
+			break;
+		case GUI_FOCUS_MONTH:
+			current_focus = GUI_FOCUS_YEAR;
+			break;
+		case GUI_FOCUS_YEAR:
+			current_focus = GUI_FOCUS_HOUR;
 			break;
 		default:
 			current_focus = GUI_FOCUS_HOUR;
@@ -288,17 +297,26 @@ void ui_shift_focus_right_callback(void)
 		return;
 	}
 
-	// Cycle through time fields: HOUR -> MINUTE -> SECOND
+	// Cycle through all time/date fields right: HOUR -> MINUTE -> SECOND -> DAY -> MONTH -> YEAR
 	switch (current_focus)
 	{
-		case GUI_FOCUS_HOUR:
-			current_focus = GUI_FOCUS_MINUTE;
+		case GUI_FOCUS_YEAR:
+			current_focus = GUI_FOCUS_MONTH;
 			break;
-		case GUI_FOCUS_MINUTE:
+		case GUI_FOCUS_MONTH:
+			current_focus = GUI_FOCUS_DAY;
+			break;
+		case GUI_FOCUS_DAY:
 			current_focus = GUI_FOCUS_SECOND;
 			break;
 		case GUI_FOCUS_SECOND:
+			current_focus = GUI_FOCUS_MINUTE;
+			break;
+		case GUI_FOCUS_MINUTE:
 			current_focus = GUI_FOCUS_HOUR;
+			break;
+		case GUI_FOCUS_HOUR:
+			current_focus = GUI_FOCUS_YEAR;
 			break;
 		default:
 			current_focus = GUI_FOCUS_HOUR;
@@ -310,12 +328,148 @@ void ui_shift_focus_right_callback(void)
 
 void ui_increase_time_callback(void)
 {
-	// Increase time callback
+	if (!time_edit_mode_active)
+	{
+		return;
+	}
+
+	time_data_t * time = ds3231_get_time(&clock);
+
+	switch (current_focus)
+	{
+		case GUI_FOCUS_HOUR:
+			time->hour++;
+			if (time->hour > 23)
+			{
+				time->hour = 0;
+			}
+			break;
+
+		case GUI_FOCUS_MINUTE:
+			time->minute++;
+			if (time->minute > 59)
+			{
+				time->minute = 0;
+			}
+			break;
+
+		case GUI_FOCUS_SECOND:
+			time->second++;
+			if (time->second > 59)
+			{
+				time->second = 0;
+			}
+			break;
+
+		case GUI_FOCUS_DAY:
+			time->day_of_month++;
+			if (time->day_of_month > 31)
+			{
+				time->day_of_month = 1;
+			}
+			break;
+
+		case GUI_FOCUS_MONTH:
+			time->month++;
+			if (time->month > 12)
+			{
+				time->month = 1;
+			}
+			break;
+
+		case GUI_FOCUS_YEAR:
+			time->year++;
+			if (time->year > 99)
+			{
+				time->year = 0;
+			}
+			break;
+
+		default:
+			break;
+	}
 }
 
 void ui_decrease_time_callback(void)
 {
-	// Decrease time callback
+	if (!time_edit_mode_active)
+	{
+		return;
+	}
+
+	time_data_t * time = ds3231_get_time(&clock);
+
+	switch (current_focus)
+	{
+		case GUI_FOCUS_HOUR:
+			if (time->hour == 0)
+			{
+				time->hour = 23;
+			}
+			else
+			{
+				time->hour--;
+			}
+			break;
+
+		case GUI_FOCUS_MINUTE:
+			if (time->minute == 0)
+			{
+				time->minute = 59;
+			}
+			else
+			{
+				time->minute--;
+			}
+			break;
+
+		case GUI_FOCUS_SECOND:
+			if (time->second == 0)
+			{
+				time->second = 59;
+			}
+			else
+			{
+				time->second--;
+			}
+			break;
+
+		case GUI_FOCUS_DAY:
+			if (time->day_of_month == 1)
+			{
+				time->day_of_month = 31;
+			}
+			else
+			{
+				time->day_of_month--;
+			}
+			break;
+
+		case GUI_FOCUS_MONTH:
+			if (time->month == 1)
+			{
+				time->month = 12;
+			}
+			else
+			{
+				time->month--;
+			}
+			break;
+
+		case GUI_FOCUS_YEAR:
+			if (time->year == 0)
+			{
+				time->year = 99;
+			}
+			else
+			{
+				time->year--;
+			}
+			break;
+
+		default:
+			break;
+	}
 }
 
 void ui_time_edit_mode_callback(bool enter)
@@ -326,13 +480,17 @@ void ui_time_edit_mode_callback(bool enter)
 		time_edit_mode_active = true;
 		current_focus = GUI_FOCUS_HOUR;
 		gui_focus(current_focus);
+		// Pause RTC time reading to prevent display updates during editing
+		ds3231_pause_time_read(&clock);
 	}
 	else
 	{
-		// Exit time edit mode
+		// Exit time edit mode and save changes
 		time_edit_mode_active = false;
 		current_focus = GUI_FOCUS_NONE;
 		gui_focus(current_focus);
+		// Save the edited time to RTC (this also resumes time reading)
+		ds3231_set_time(&clock, ds3231_get_time(&clock));
 	}
 }
 

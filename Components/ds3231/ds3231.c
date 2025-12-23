@@ -57,6 +57,7 @@ void ds3231_init(ds3231_data_t * this,
 	this->oscillator_not_started = false;
 	this->oscillator_check_pending = true;
 	this->time_read_in_progress = false;
+	this->time_read_paused = false;
 	this->status_read_in_progress = false;
 	this->alarm1_update_request = false;
 	this->alarm1_update_waiting_for_interrupt = false;
@@ -137,8 +138,8 @@ void ds3231_main(ds3231_data_t * this)
 	uint32_t elapsed_ms = current_tick - this->last_tick;
 	this->last_tick = current_tick;
 
-	// Read current time at specified period
-	if (this->tick_timer % DS3231_TIME_READ_PERIOD_MS == 0)
+	// Read current time at specified period (unless paused)
+	if (!this->time_read_paused && (this->tick_timer % DS3231_TIME_READ_PERIOD_MS == 0))
 	{
 		this->time_read_in_progress = true;
 		this->i2c_read(DS3231_CURRENT_TIME_START_ADDRESS, this->rx_buffer, DS3231_CURRENT_TIME_LENGTH);
@@ -243,6 +244,9 @@ void ds3231_set_time(ds3231_data_t * this, time_data_t * new_time)
 
 	// Set the flag to request time update on next ds3231_main() call
 	this->time_update_request = true;
+
+	// Resume time reading (in case it was paused during editing)
+	this->time_read_paused = false;
 }
 
 void ds3231_set_alarm1(ds3231_data_t * this, uint8_t seconds, uint8_t minutes, uint8_t hours, uint8_t day_date)
@@ -284,6 +288,18 @@ time_data_t * ds3231_get_time(ds3231_data_t * this)
 {
 	// Return pointer to current time structure
 	return &this->current_time;
+}
+
+void ds3231_pause_time_read(ds3231_data_t * this)
+{
+	// Pause periodic time reading from DS3231
+	this->time_read_paused = true;
+}
+
+void ds3231_resume_time_read(ds3231_data_t * this)
+{
+	// Resume periodic time reading from DS3231
+	this->time_read_paused = false;
 }
 
 /**************************************      LOCAL FUNCTION DEFINITIONS      ******************************************/
