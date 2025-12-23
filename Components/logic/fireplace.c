@@ -51,6 +51,7 @@ void fireplace_init(void)
 	ds3231_init(&clock, clock_i2c_receive, clock_i2c_send);
 	pcf8574_init(&gpio_expander, gpio_expander_i2c_send, gpio_expander_write_complete_callback);
 	hd44780_init(&display, 4, 20, display_update_pins);
+	gui_focus(GUI_FOCUS_MINUTE);
 }
 
 void fireplace_main(void)
@@ -61,10 +62,10 @@ void fireplace_main(void)
 	ds3231_main(&clock);
 	pcf8574_main(&gpio_expander);
 	hd44780_main(&display);
-
+	gui_main();
 	fireplace_update_gui();
 
-	if (HAL_GetTick() % 1000 == 0)
+	if (HAL_GetTick() % 200 == 0)
 	{
 		hd44780_write_buffer(&display,gui_get_screen_buffer());
 	}
@@ -161,7 +162,8 @@ void fireplace_update_gui(void)
 
 	gui_set_ppm(20);
 
-	gui_set_fireplace_temperature(122);
+	gui_set_fireplace_temperature(max6675_get_temperature(&thermocouple));
+
 }
 
 void gpio_expander_write_complete_callback(void)
