@@ -40,9 +40,6 @@ hd44780_data_t display;
 analog_keyboard_data_t keyboard;
 ui_data_t ui;
 
-bool time_edit_mode_active = false;
-gui_focus_t current_focus = GUI_FOCUS_NONE;
-
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size);
 int clock_i2c_send(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
@@ -90,7 +87,6 @@ void fireplace_init(void)
 			ui_increase_time_callback,
 			ui_decrease_time_callback,
 			ui_time_edit_mode_callback);
-	gui_focus(GUI_FOCUS_NONE);
 }
 
 void fireplace_main(void)
@@ -106,10 +102,10 @@ void fireplace_main(void)
 	gui_main();
 	fireplace_update_gui();
 
-	if (HAL_GetTick() % 200 == 0)
-	{
+	// if (HAL_GetTick() % 100 == 0)
+	// {
 		hd44780_write_buffer(&display,gui_get_screen_buffer());
-	}
+	// }
 
 
 	current_temperature = max6675_get_temperature(&thermocouple);
@@ -256,220 +252,88 @@ void keyboard_button_ok_callback(bool state)
 
 void ui_shift_focus_left_callback(void)
 {
-	if (!time_edit_mode_active)
-	{
-		return;
-	}
-
-	// Cycle through all time/date fields left: HOUR <- MINUTE <- SECOND <- DAY <- MONTH <- YEAR
-	switch (current_focus)
-	{
-		case GUI_FOCUS_HOUR:
-			current_focus = GUI_FOCUS_MINUTE;
-			break;
-		case GUI_FOCUS_MINUTE:
-			current_focus = GUI_FOCUS_SECOND;
-			break;
-		case GUI_FOCUS_SECOND:
-			current_focus = GUI_FOCUS_DAY;
-			break;
-		case GUI_FOCUS_DAY:
-			current_focus = GUI_FOCUS_MONTH;
-			break;
-		case GUI_FOCUS_MONTH:
-			current_focus = GUI_FOCUS_YEAR;
-			break;
-		case GUI_FOCUS_YEAR:
-			current_focus = GUI_FOCUS_HOUR;
-			break;
-		default:
-			current_focus = GUI_FOCUS_HOUR;
-			break;
-	}
-
-	gui_focus(current_focus);
+	gui_shift_focus_left();
 }
 
 void ui_shift_focus_right_callback(void)
 {
-	if (!time_edit_mode_active)
-	{
-		return;
-	}
-
-	// Cycle through all time/date fields right: HOUR -> MINUTE -> SECOND -> DAY -> MONTH -> YEAR
-	switch (current_focus)
-	{
-		case GUI_FOCUS_YEAR:
-			current_focus = GUI_FOCUS_MONTH;
-			break;
-		case GUI_FOCUS_MONTH:
-			current_focus = GUI_FOCUS_DAY;
-			break;
-		case GUI_FOCUS_DAY:
-			current_focus = GUI_FOCUS_SECOND;
-			break;
-		case GUI_FOCUS_SECOND:
-			current_focus = GUI_FOCUS_MINUTE;
-			break;
-		case GUI_FOCUS_MINUTE:
-			current_focus = GUI_FOCUS_HOUR;
-			break;
-		case GUI_FOCUS_HOUR:
-			current_focus = GUI_FOCUS_YEAR;
-			break;
-		default:
-			current_focus = GUI_FOCUS_HOUR;
-			break;
-	}
-
-	gui_focus(current_focus);
+	gui_shift_focus_right();
 }
 
 void ui_increase_time_callback(void)
 {
-	if (!time_edit_mode_active)
+	gui_focus_t focus = gui_get_focus();
+
+	if (focus == GUI_FOCUS_NONE)
 	{
 		return;
 	}
 
-	time_data_t * time = ds3231_get_time(&clock);
-
-	switch (current_focus)
+	ds3231_time_param_t param;
+	switch (focus)
 	{
 		case GUI_FOCUS_HOUR:
-			time->hour++;
-			if (time->hour > 23)
-			{
-				time->hour = 0;
-			}
+			param = DS3231_PARAM_HOUR;
 			break;
-
 		case GUI_FOCUS_MINUTE:
-			time->minute++;
-			if (time->minute > 59)
-			{
-				time->minute = 0;
-			}
+			param = DS3231_PARAM_MINUTE;
 			break;
-
 		case GUI_FOCUS_SECOND:
-			time->second++;
-			if (time->second > 59)
-			{
-				time->second = 0;
-			}
+			param = DS3231_PARAM_SECOND;
 			break;
-
 		case GUI_FOCUS_DAY:
-			time->day_of_month++;
-			if (time->day_of_month > 31)
-			{
-				time->day_of_month = 1;
-			}
+			param = DS3231_PARAM_DAY;
 			break;
-
 		case GUI_FOCUS_MONTH:
-			time->month++;
-			if (time->month > 12)
-			{
-				time->month = 1;
-			}
+			param = DS3231_PARAM_MONTH;
 			break;
-
 		case GUI_FOCUS_YEAR:
-			time->year++;
-			if (time->year > 99)
-			{
-				time->year = 0;
-			}
+			param = DS3231_PARAM_YEAR;
 			break;
-
 		default:
-			break;
+			return;
 	}
+
+	ds3231_adjust_time(&clock, param, DS3231_ADJUST_UP);
+	ds3231_set_time(&clock, ds3231_get_time(&clock));
 }
 
 void ui_decrease_time_callback(void)
 {
-	if (!time_edit_mode_active)
+	gui_focus_t focus = gui_get_focus();
+
+	if (focus == GUI_FOCUS_NONE)
 	{
 		return;
 	}
 
-	time_data_t * time = ds3231_get_time(&clock);
-
-	switch (current_focus)
+	ds3231_time_param_t param;
+	switch (focus)
 	{
 		case GUI_FOCUS_HOUR:
-			if (time->hour == 0)
-			{
-				time->hour = 23;
-			}
-			else
-			{
-				time->hour--;
-			}
+			param = DS3231_PARAM_HOUR;
 			break;
-
 		case GUI_FOCUS_MINUTE:
-			if (time->minute == 0)
-			{
-				time->minute = 59;
-			}
-			else
-			{
-				time->minute--;
-			}
+			param = DS3231_PARAM_MINUTE;
 			break;
-
 		case GUI_FOCUS_SECOND:
-			if (time->second == 0)
-			{
-				time->second = 59;
-			}
-			else
-			{
-				time->second--;
-			}
+			param = DS3231_PARAM_SECOND;
 			break;
-
 		case GUI_FOCUS_DAY:
-			if (time->day_of_month == 1)
-			{
-				time->day_of_month = 31;
-			}
-			else
-			{
-				time->day_of_month--;
-			}
+			param = DS3231_PARAM_DAY;
 			break;
-
 		case GUI_FOCUS_MONTH:
-			if (time->month == 1)
-			{
-				time->month = 12;
-			}
-			else
-			{
-				time->month--;
-			}
+			param = DS3231_PARAM_MONTH;
 			break;
-
 		case GUI_FOCUS_YEAR:
-			if (time->year == 0)
-			{
-				time->year = 99;
-			}
-			else
-			{
-				time->year--;
-			}
+			param = DS3231_PARAM_YEAR;
 			break;
-
 		default:
-			break;
+			return;
 	}
+
+	ds3231_adjust_time(&clock, param, DS3231_ADJUST_DOWN);
+	ds3231_set_time(&clock, ds3231_get_time(&clock));
 }
 
 void ui_time_edit_mode_callback(bool enter)
@@ -477,20 +341,12 @@ void ui_time_edit_mode_callback(bool enter)
 	if (enter)
 	{
 		// Enter time edit mode
-		time_edit_mode_active = true;
-		current_focus = GUI_FOCUS_HOUR;
-		gui_focus(current_focus);
-		// Pause RTC time reading to prevent display updates during editing
-		ds3231_pause_time_read(&clock);
+		gui_time_edit_mode(true);
 	}
 	else
 	{
-		// Exit time edit mode and save changes
-		time_edit_mode_active = false;
-		current_focus = GUI_FOCUS_NONE;
-		gui_focus(current_focus);
-		// Save the edited time to RTC (this also resumes time reading)
-		ds3231_set_time(&clock, ds3231_get_time(&clock));
+		// Exit time edit mode
+		gui_time_edit_mode(false);
 	}
 }
 

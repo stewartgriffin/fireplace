@@ -249,6 +249,147 @@ void ds3231_set_time(ds3231_data_t * this, time_data_t * new_time)
 	this->time_read_paused = false;
 }
 
+void ds3231_adjust_time(ds3231_data_t * this, ds3231_time_param_t param, ds3231_adjust_dir_t dir)
+{
+	switch (param)
+	{
+		case DS3231_PARAM_HOUR:
+			if (dir == DS3231_ADJUST_UP)
+			{
+				this->current_time.hour++;
+				if (this->current_time.hour > 23)
+				{
+					this->current_time.hour = 0;
+				}
+			}
+			else
+			{
+				if (this->current_time.hour == 0)
+				{
+					this->current_time.hour = 23;
+				}
+				else
+				{
+					this->current_time.hour--;
+				}
+			}
+			break;
+
+		case DS3231_PARAM_MINUTE:
+			if (dir == DS3231_ADJUST_UP)
+			{
+				this->current_time.minute++;
+				if (this->current_time.minute > 59)
+				{
+					this->current_time.minute = 0;
+				}
+			}
+			else
+			{
+				if (this->current_time.minute == 0)
+				{
+					this->current_time.minute = 59;
+				}
+				else
+				{
+					this->current_time.minute--;
+				}
+			}
+			break;
+
+		case DS3231_PARAM_SECOND:
+			if (dir == DS3231_ADJUST_UP)
+			{
+				this->current_time.second++;
+				if (this->current_time.second > 59)
+				{
+					this->current_time.second = 0;
+				}
+			}
+			else
+			{
+				if (this->current_time.second == 0)
+				{
+					this->current_time.second = 59;
+				}
+				else
+				{
+					this->current_time.second--;
+				}
+			}
+			break;
+
+		case DS3231_PARAM_DAY:
+			if (dir == DS3231_ADJUST_UP)
+			{
+				this->current_time.day_of_month++;
+				if (this->current_time.day_of_month > 31)
+				{
+					this->current_time.day_of_month = 1;
+				}
+			}
+			else
+			{
+				if (this->current_time.day_of_month == 1)
+				{
+					this->current_time.day_of_month = 31;
+				}
+				else
+				{
+					this->current_time.day_of_month--;
+				}
+			}
+			break;
+
+		case DS3231_PARAM_MONTH:
+			if (dir == DS3231_ADJUST_UP)
+			{
+				this->current_time.month++;
+				if (this->current_time.month > 12)
+				{
+					this->current_time.month = 1;
+				}
+			}
+			else
+			{
+				if (this->current_time.month == 1)
+				{
+					this->current_time.month = 12;
+				}
+				else
+				{
+					this->current_time.month--;
+				}
+			}
+			break;
+
+		case DS3231_PARAM_YEAR:
+			if (dir == DS3231_ADJUST_UP)
+			{
+				this->current_time.year++;
+				if (this->current_time.year > 99)
+				{
+					this->current_time.year = 0;
+				}
+			}
+			else
+			{
+				if (this->current_time.year == 0)
+				{
+					this->current_time.year = 99;
+				}
+				else
+				{
+					this->current_time.year--;
+				}
+			}
+			break;
+
+		default:
+			break;
+	}
+}
+
 void ds3231_set_alarm1(ds3231_data_t * this, uint8_t seconds, uint8_t minutes, uint8_t hours, uint8_t day_date)
 {
 	// Update alarm 1 registers in the structure

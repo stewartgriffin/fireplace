@@ -21,6 +21,22 @@ extern "C" {
 #endif
 
 /**************************************           DATA TYPES                 ******************************************/
+typedef enum
+{
+	DS3231_PARAM_SECOND,
+	DS3231_PARAM_MINUTE,
+	DS3231_PARAM_HOUR,
+	DS3231_PARAM_DAY,
+	DS3231_PARAM_MONTH,
+	DS3231_PARAM_YEAR
+}ds3231_time_param_t;
+
+typedef enum
+{
+	DS3231_ADJUST_UP,
+	DS3231_ADJUST_DOWN
+}ds3231_adjust_dir_t;
+
 typedef struct
 {
 	uint8_t second;
@@ -93,6 +109,7 @@ void ds3231_init(ds3231_data_t * this,
 void ds3231_main(ds3231_data_t * this);
 void ds3231_interrupt(ds3231_data_t * this);
 void ds3231_set_time(ds3231_data_t * this, time_data_t * new_time);
+void ds3231_adjust_time(ds3231_data_t * this, ds3231_time_param_t param, ds3231_adjust_dir_t dir);
 void ds3231_set_alarm1(ds3231_data_t * this, uint8_t seconds, uint8_t minutes, uint8_t hours, uint8_t day_date);
 void ds3231_set_alarm2(ds3231_data_t * this, uint8_t minutes, uint8_t hours, uint8_t day_date);
 void ds3231_read_alarm1(ds3231_data_t * this);

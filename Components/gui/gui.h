@@ -37,7 +37,10 @@ typedef enum
 
 /**************************************    GLOBAL FUNCTION DECLARATIONS      ******************************************/
 void gui_main(void);
-void gui_focus(gui_focus_t focus);
+void gui_shift_focus_left(void);
+void gui_shift_focus_right(void);
+void gui_time_edit_mode(bool enable);
+gui_focus_t gui_get_focus(void);
 void gui_set_time(time_data_t * time);
 void gui_set_fireplace(uint8_t value);
 void gui_set_ventilation(uint8_t value);

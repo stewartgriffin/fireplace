@@ -24,8 +24,8 @@
 #define DATE_POS           72   // DD.MM.YY (position for DD)
 
 // Blink timing (configurable)
-#define GUI_BLINK_ON_TIME_MS   800
-#define GUI_BLINK_OFF_TIME_MS  800
+#define GUI_BLINK_ON_TIME_MS   500
+#define GUI_BLINK_OFF_TIME_MS  300
 
 /**************************************           DATA TYPES                 ******************************************/
 
@@ -66,6 +66,7 @@ static void format_2digit(char *buffer, uint8_t value);
 static void format_3digit_right_justified(char *buffer, uint8_t value);
 static uint8_t get_focus_position(gui_focus_t focus);
 static void apply_blink_state(void);
+static void gui_focus(gui_focus_t focus);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 void gui_main(void)
@@ -90,7 +91,100 @@ void gui_main(void)
 	}
 }
 
-void gui_focus(gui_focus_t focus)
+void gui_shift_focus_left(void)
+{
+	if (current_focus == GUI_FOCUS_NONE)
+	{
+		return;
+	}
+
+	// Cycle through all time/date fields left: YEAR -> MONTH -> DAY -> SECOND -> MINUTE -> HOUR
+	gui_focus_t new_focus;
+	switch (current_focus)
+	{
+		case GUI_FOCUS_YEAR:
+			new_focus = GUI_FOCUS_MONTH;
+			break;
+		case GUI_FOCUS_MONTH:
+			new_focus = GUI_FOCUS_DAY;
+			break;
+		case GUI_FOCUS_DAY:
+			new_focus = GUI_FOCUS_SECOND;
+			break;
+		case GUI_FOCUS_SECOND:
+			new_focus = GUI_FOCUS_MINUTE;
+			break;
+		case GUI_FOCUS_MINUTE:
+			new_focus = GUI_FOCUS_HOUR;
+			break;
+		case GUI_FOCUS_HOUR:
+			new_focus = GUI_FOCUS_YEAR;
+			break;
+		default:
+			new_focus = GUI_FOCUS_HOUR;
+			break;
+	}
+
+	gui_focus(new_focus);
+}
+
+void gui_shift_focus_right(void)
+{
+	if (current_focus == GUI_FOCUS_NONE)
+	{
+		return;
+	}
+
+	// Cycle through all time/date fields right: HOUR -> MINUTE -> SECOND -> DAY -> MONTH -> YEAR
+	gui_focus_t new_focus;
+	switch (current_focus)
+	{
+		case GUI_FOCUS_HOUR:
+			new_focus = GUI_FOCUS_MINUTE;
+			break;
+		case GUI_FOCUS_MINUTE:
+			new_focus = GUI_FOCUS_SECOND;
+			break;
+		case GUI_FOCUS_SECOND:
+			new_focus = GUI_FOCUS_DAY;
+			break;
+		case GUI_FOCUS_DAY:
+			new_focus = GUI_FOCUS_MONTH;
+			break;
+		case GUI_FOCUS_MONTH:
+			new_focus = GUI_FOCUS_YEAR;
+			break;
+		case GUI_FOCUS_YEAR:
+			new_focus = GUI_FOCUS_HOUR;
+			break;
+		default:
+			new_focus = GUI_FOCUS_HOUR;
+			break;
+	}
+
+	gui_focus(new_focus);
+}
+
+void gui_time_edit_mode(bool enable)
+{
+	if (enable)
+	{
+		// Enter time edit mode - focus on hour
+		gui_focus(GUI_FOCUS_HOUR);
+	}
+	else
+	{
+		// Exit time edit mode - remove focus
+		gui_focus(GUI_FOCUS_NONE);
+	}
+}
+
+gui_focus_t gui_get_focus(void)
+{
+	return current_focus;
+}
+
+static void gui_focus(gui_focus_t focus)
 {
 	// Restore previous focused field if it was hidden
 	if (current_focus != GUI_FOCUS_NONE && !blink_state)
