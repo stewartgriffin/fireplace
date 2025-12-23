@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os2.h"
+#include "adc.h"
 #include "dcache.h"
 #include "i2c.h"
 #include "icache.h"
@@ -101,6 +102,7 @@ int main(void)
   MX_I2C3_Init();
   MX_UART4_Init();
   MX_DCACHE1_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */

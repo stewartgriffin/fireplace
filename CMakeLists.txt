@@ -51,6 +51,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Components/max6675/max6675.c
     Components/pcf8574/pcf8574.c
     Components/gui/gui.c
+    Components/analog_keyboard/analog_keyboard.c
+    Components/ui/ui.c
 )
 
 # Add include paths
@@ -62,6 +64,8 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Components/max6675
     Components/pcf8574
     Components/gui
+    Components/analog_keyboard
+    Components/ui
 )
 
 # Add project symbols (macros)

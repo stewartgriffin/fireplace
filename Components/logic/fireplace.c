@@ -14,10 +14,13 @@
 #include "stm32h5xx_hal.h"
 #include "max6675.h"
 #include "spi.h"
+#include "adc.h"
 
 #include "ds3231.h"
 #include "pcf8574.h"
 #include "hd44780.h"
+#include "analog_keyboard.h"
+#include "ui.h"
 #include "i2c.h"
 #include "gui.h"
 
@@ -34,6 +37,11 @@ int current_temperature = 0;
 ds3231_data_t clock;
 pcf8574_data_t gpio_expander;
 hd44780_data_t display;
+analog_keyboard_data_t keyboard;
+ui_data_t ui;
+
+bool time_edit_mode_active = false;
+gui_focus_t current_focus = GUI_FOCUS_NONE;
 
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size);
@@ -43,6 +51,23 @@ int gpio_expander_i2c_send(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
 void display_update_pins(uint8_t d4_d7, bool rs, bool e);
 void fireplace_update_gui(void);
 void gpio_expander_write_complete_callback(void);
+int keyboard_adc_start_conversion(void);
+int keyboard_adc_read(uint32_t *value);
+void keyboard_button_left_callback(bool state);
+void keyboard_button_up_callback(bool state);
+void keyboard_button_down_callback(bool state);
+void keyboard_button_right_callback(bool state);
+void keyboard_button_ok_callback(bool state);
+void ui_shift_focus_left_callback(void);
+void ui_shift_focus_right_callback(void);
+void ui_increase_time_callback(void);
+void ui_decrease_time_callback(void);
+void ui_time_edit_mode_callback(bool enter);
+void ui_wrapper_set_input_up(bool state);
+void ui_wrapper_set_input_down(bool state);
+void ui_wrapper_set_input_left(bool state);
+void ui_wrapper_set_input_right(bool state);
+void ui_wrapper_set_input_ok(bool state);
 	
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 void fireplace_init(void)
@@ -51,7 +76,21 @@ void fireplace_init(void)
 	ds3231_init(&clock, clock_i2c_receive, clock_i2c_send);
 	pcf8574_init(&gpio_expander, gpio_expander_i2c_send, gpio_expander_write_complete_callback);
 	hd44780_init(&display, 4, 20, display_update_pins);
-	gui_focus(GUI_FOCUS_MINUTE);
+	analog_keyboard_init(&keyboard,
+						keyboard_adc_start_conversion,
+						keyboard_adc_read,
+						keyboard_button_left_callback,
+						keyboard_button_up_callback,
+						keyboard_button_down_callback,
+						keyboard_button_right_callback,
+						keyboard_button_ok_callback);
+	ui_init(&ui,
+			ui_shift_focus_left_callback,
+			ui_shift_focus_right_callback,
+			ui_increase_time_callback,
+			ui_decrease_time_callback,
+			ui_time_edit_mode_callback);
+	gui_focus(GUI_FOCUS_NONE);
 }
 
 void fireplace_main(void)
@@ -62,6 +101,8 @@ void fireplace_main(void)
 	ds3231_main(&clock);
 	pcf8574_main(&gpio_expander);
 	hd44780_main(&display);
+	analog_keyboard_main(&keyboard);
+	ui_main_function(&ui);
 	gui_main();
 	fireplace_update_gui();
 
@@ -93,6 +134,11 @@ void display_i2c_interrupt(void)
 void thermocouple_spi_interrupt(void)
 {
 	max6675_spi_irq_handler(&thermocouple);
+}
+
+void keyboard_adc_interrupt(void)
+{
+	analog_keyboard_interrupt(&keyboard);
 }
 
 /**************************************      LOCAL FUNCTION DEFINITIONS      ******************************************/
@@ -163,7 +209,6 @@ void fireplace_update_gui(void)
 	gui_set_ppm(20);
 
 	gui_set_fireplace_temperature(max6675_get_temperature(&thermocouple));
-
 }
 
 void gpio_expander_write_complete_callback(void)
@@ -171,4 +216,147 @@ void gpio_expander_write_complete_callback(void)
 	// Called when PCF8574 I2C write completes
 	// This notifies HD44780 that the pin update is complete
 	hd44780_transfer_complete(&display);
+}
+
+int keyboard_adc_start_conversion(void)
+{
+	return HAL_ADC_Start_IT(&hadc1);
+}
+
+int keyboard_adc_read(uint32_t *value)
+{
+	*value = HAL_ADC_GetValue(&hadc1);
+	return 0;
+}
+
+void keyboard_button_left_callback(bool state)
+{
+	ui_wrapper_set_input_left(state);
+}
+
+void keyboard_button_up_callback(bool state)
+{
+	ui_wrapper_set_input_up(state);
+}
+
+void keyboard_button_down_callback(bool state)
+{
+	ui_wrapper_set_input_down(state);
+}
+
+void keyboard_button_right_callback(bool state)
+{
+	ui_wrapper_set_input_right(state);
+}
+
+void keyboard_button_ok_callback(bool state)
+{
+	ui_wrapper_set_input_ok(state);
+}
+
+void ui_shift_focus_left_callback(void)
+{
+	if (!time_edit_mode_active)
+	{
+		return;
+	}
+
+	// Cycle through time fields: HOUR <- MINUTE <- SECOND
+	switch (current_focus)
+	{
+		case GUI_FOCUS_HOUR:
+			current_focus = GUI_FOCUS_SECOND;
+			break;
+		case GUI_FOCUS_MINUTE:
+			current_focus = GUI_FOCUS_HOUR;
+			break;
+		case GUI_FOCUS_SECOND:
+			current_focus = GUI_FOCUS_MINUTE;
+			break;
+		default:
+			current_focus = GUI_FOCUS_HOUR;
+			break;
+	}
+
+	gui_focus(current_focus);
+}
+
+void ui_shift_focus_right_callback(void)
+{
+	if (!time_edit_mode_active)
+	{
+		return;
+	}
+
+	// Cycle through time fields: HOUR -> MINUTE -> SECOND
+	switch (current_focus)
+	{
+		case GUI_FOCUS_HOUR:
+			current_focus = GUI_FOCUS_MINUTE;
+			break;
+		case GUI_FOCUS_MINUTE:
+			current_focus = GUI_FOCUS_SECOND;
+			break;
+		case GUI_FOCUS_SECOND:
+			current_focus = GUI_FOCUS_HOUR;
+			break;
+		default:
+			current_focus = GUI_FOCUS_HOUR;
+			break;
+	}
+
+	gui_focus(current_focus);
+}
+
+void ui_increase_time_callback(void)
+{
+	// Increase time callback
+}
+
+void ui_decrease_time_callback(void)
+{
+	// Decrease time callback
+}
+
+void ui_time_edit_mode_callback(bool enter)
+{
+	if (enter)
+	{
+		// Enter time edit mode
+		time_edit_mode_active = true;
+		current_focus = GUI_FOCUS_HOUR;
+		gui_focus(current_focus);
+	}
+	else
+	{
+		// Exit time edit mode
+		time_edit_mode_active = false;
+		current_focus = GUI_FOCUS_NONE;
+		gui_focus(current_focus);
+	}
+}
+
+void ui_wrapper_set_input_up(bool state)
+{
+	ui_set_input_up(&ui, state);
+}
+
+void ui_wrapper_set_input_down(bool state)
+{
+	ui_set_input_down(&ui, state);
+}
+
+void ui_wrapper_set_input_left(bool state)
+{
+	ui_set_input_left(&ui, state);
+}
+
+void ui_wrapper_set_input_right(bool state)
+{
+	ui_set_input_right(&ui, state);
+}
+
+void ui_wrapper_set_input_ok(bool state)
+{
+	ui_set_input_ok(&ui, state);
 }
