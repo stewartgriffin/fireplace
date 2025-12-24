@@ -21,25 +21,64 @@ extern "C" {
 #endif
 
 /**************************************           DATA TYPES                 ******************************************/
+
+/**
+ * @brief MAX6675 thermocouple-to-digital converter driver data structure
+ * Reads temperature from K-type thermocouple via SPI interface
+ * Temperature resolution: 0.25°C (12-bit)
+ * Update rate: Approximately every 220ms
+ */
 typedef struct
 {
+	/**
+	 * @brief Function pointer to start SPI transfer
+	 * @param tx_buffer Pointer to transmit buffer
+	 * @param rx_buffer Pointer to receive buffer
+	 * @param size Number of bytes to transfer
+	 * @return 0 on success, error code otherwise
+	 */
 	int (*spi_start_transfer)(uint8_t *tx_buffer, uint8_t * rx_buffer, uint16_t size);
-	uint32_t temperature;
-	uint32_t tick_timer;
-	uint32_t last_tick;  // Last HAL_GetTick() value for calculating elapsed time
-	bool conection_open;
-	bool transfer_in_progress;
-	uint8_t tx_buffer[2];
-	uint8_t rx_buffer[2];
+
+	uint32_t temperature;           ///< Last measured temperature in degrees Celsius
+	uint32_t tick_timer;            ///< Tick counter for timing
+	uint32_t last_tick;             ///< Last HAL_GetTick() value for calculating elapsed time
+	bool conection_open;            ///< True if thermocouple is connected
+	bool transfer_in_progress;      ///< True if SPI transfer is active
+	uint8_t tx_buffer[2];           ///< SPI transmit buffer
+	uint8_t rx_buffer[2];           ///< SPI receive buffer
 }max6675_data_t;
 
 /**************************************           DEFINES                    ******************************************/
 
 /**************************************    GLOBAL FUNCTION DECLARATIONS      ******************************************/
+
+/**
+ * @brief Initialize MAX6675 thermocouple driver
+ * @param this Pointer to MAX6675 data structure
+ * @param spi_start_transfer Function pointer to start SPI transfer (interrupt-driven)
+ */
 void max6675_init(max6675_data_t * this,
 				int (*spi_start_transfer)(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size));
+
+/**
+ * @brief Main function - call periodically to trigger temperature readings
+ * Automatically requests new readings at appropriate intervals
+ * @param this Pointer to MAX6675 data structure
+ */
 void max6675_main(max6675_data_t * this);
+
+/**
+ * @brief Get last measured temperature
+ * @param this Pointer to MAX6675 data structure
+ * @return Temperature in degrees Celsius
+ */
 int max6675_get_temperature(max6675_data_t * this);
+
+/**
+ * @brief SPI transfer complete interrupt callback
+ * Call from SPI interrupt handler when transfer completes
+ * @param this Pointer to MAX6675 data structure
+ */
 void max6675_spi_irq_handler(max6675_data_t * this);
 
 

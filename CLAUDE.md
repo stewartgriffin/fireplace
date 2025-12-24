@@ -55,6 +55,8 @@ Components/
 ├── max6675/          # MAX6675 thermocouple driver
 ├── pcf8574/          # PCF8574 I2C GPIO expander driver
 ├── ui/               # UI module with button handling and callbacks
+├── flap_controller/  # Servo-based flap position controller
+├── daily_schedule/   # Time-based scheduling with duty cycle control
 ├── logic/            # Main application logic (fireplace.c)
 Core/
 ├── Src/              # STM32 HAL and peripheral initialization
@@ -78,12 +80,15 @@ fireplace.ioc         # STM32CubeMX project configuration
 - ✅ UI module with button handling (up, down, left, right)
 - ✅ Callback-based event system for button presses
 - ✅ Real-time temperature reading from MAX6675
+- ✅ PWM servo control for flap actuation (50Hz, 0.9ms-1.6ms pulse width)
+- ✅ Flap controller with smooth transitions and fixed-point arithmetic
+- ✅ Daily schedule module with 30-minute duty cycle control
+- ✅ Doxygen documentation for all driver modules
 
 ### In Development
 - Fireplace temperature monitoring logic and control algorithms
-- Air flap control logic with servo motors
-- Scheduling system for ventilation based on RTC
-- Integration of all components into cohesive control system
+- Integration of daily schedule with ventilation flap control
+- Final integration of all components into cohesive control system
 
 ### Planned Features
 - Air quality sensor integration (PM2.5, CO2, or VOC sensors)

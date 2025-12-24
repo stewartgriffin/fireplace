@@ -22,30 +22,91 @@ extern "C" {
 #endif
 
 /**************************************           DATA TYPES                 ******************************************/
+
+/**
+ * @brief GUI focus enumeration for time/date field selection
+ * Defines which field is currently focused for editing
+ */
 typedef enum
 {
-	GUI_FOCUS_NONE,
-	GUI_FOCUS_HOUR,
-	GUI_FOCUS_MINUTE,
-	GUI_FOCUS_SECOND,
-	GUI_FOCUS_DAY,
-	GUI_FOCUS_MONTH,
-	GUI_FOCUS_YEAR
+	GUI_FOCUS_NONE,     ///< No field focused
+	GUI_FOCUS_HOUR,     ///< Hour field focused
+	GUI_FOCUS_MINUTE,   ///< Minute field focused
+	GUI_FOCUS_SECOND,   ///< Second field focused
+	GUI_FOCUS_DAY,      ///< Day field focused
+	GUI_FOCUS_MONTH,    ///< Month field focused
+	GUI_FOCUS_YEAR      ///< Year field focused
 }gui_focus_t;
 
 /**************************************           DEFINES                    ******************************************/
 
 /**************************************    GLOBAL FUNCTION DECLARATIONS      ******************************************/
+
+/**
+ * @brief Main GUI update function
+ * Call periodically to update blinking and display state
+ */
 void gui_main(void);
+
+/**
+ * @brief Shift focus to the previous time/date field
+ * Cycles through fields: YEAR -> MONTH -> DAY -> HOUR -> MINUTE -> SECOND
+ */
 void gui_shift_focus_left(void);
+
+/**
+ * @brief Shift focus to the next time/date field
+ * Cycles through fields: SECOND -> MINUTE -> HOUR -> DAY -> MONTH -> YEAR
+ */
 void gui_shift_focus_right(void);
+
+/**
+ * @brief Enable or disable time edit mode
+ * When enabled, allows field focus and blinking for time editing
+ * @param enable true to enter edit mode, false to exit
+ */
 void gui_time_edit_mode(bool enable);
+
+/**
+ * @brief Get current focused field
+ * @return Currently focused field (GUI_FOCUS_NONE if not in edit mode)
+ */
 gui_focus_t gui_get_focus(void);
+
+/**
+ * @brief Update GUI with current time
+ * @param time Pointer to time structure from DS3231
+ */
 void gui_set_time(time_data_t * time);
+
+/**
+ * @brief Update fireplace flap position display
+ * @param value Fireplace flap position (0-100%)
+ */
 void gui_set_fireplace(uint8_t value);
+
+/**
+ * @brief Update ventilation flap position display
+ * @param value Ventilation flap position (0-100%)
+ */
 void gui_set_ventilation(uint8_t value);
+
+/**
+ * @brief Update air quality (PPM) display
+ * @param value Air quality value in PPM
+ */
 void gui_set_ppm(uint8_t value);
+
+/**
+ * @brief Update fireplace temperature display
+ * @param value Temperature in degrees Celsius
+ */
 void gui_set_fireplace_temperature(uint8_t value);
+
+/**
+ * @brief Get pointer to screen buffer for display output
+ * @return Pointer to screen buffer string (rows * columns bytes)
+ */
 char * gui_get_screen_buffer(void);
 
 /* CPP GUARD END */
