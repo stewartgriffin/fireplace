@@ -25,12 +25,26 @@
 #include "gui.h"
 #include "tim.h"
 #include "flap_controller.h"
+#include "daily_schedule.h"
 
 /**************************************           DEFINES                    ******************************************/
 
 /**************************************           DATA TYPES                 ******************************************/
 
 /**************************************           CONSTANTS                  ******************************************/
+
+// Ventilation schedule configuration
+static const daily_schedule_entry_t ventilation_schedule[] = {
+	{0, 0, 10},    // Midnight: 10%
+	{5, 0, 3},     // 5:00 AM: 3%
+	{15, 0, 0},    // 3:00 PM: 0%
+	{22, 0, 10}    // 10:00 PM: 10%
+};
+
+static const daily_schedule_config_t ventilation_schedule_config = {
+	.entries = ventilation_schedule,
+	.num_entries = sizeof(ventilation_schedule) / sizeof(ventilation_schedule[0])
+};
 
 /**************************************           LOCAL VARIABLES            ******************************************/
 max6675_data_t thermocouple;
@@ -44,6 +58,8 @@ ui_data_t ui;
 
 flap_controller_data_t fireplace_flap;
 flap_controller_data_t ventilation_flap;
+
+daily_schedule_data_t ventilation_daily_schedule;
 
 // Test variables for flap position cycling
 static uint8_t test_flap_position = 0;
@@ -103,6 +119,9 @@ void fireplace_init(void)
 	flap_controller_init(&fireplace_flap, fireplace_flap_set_pwm, 0);
 	flap_controller_init(&ventilation_flap, ventilation_flap_set_pwm, 0);
 
+	// Initialize ventilation schedule
+	daily_schedule_init(&ventilation_daily_schedule, &ventilation_schedule_config);
+
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
 }
@@ -119,6 +138,9 @@ void fireplace_main(void)
 	ui_main_function(&ui);
 	gui_main();
 	fireplace_update_gui();
+
+	// Update daily schedule
+	daily_schedule_main(&ventilation_daily_schedule, *ds3231_get_time(&clock));
 
 	// Update flap controllers
 	flap_controller_main(&fireplace_flap);
