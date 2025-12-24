@@ -53,6 +53,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Components/gui/gui.c
     Components/analog_keyboard/analog_keyboard.c
     Components/ui/ui.c
+    Components/flap_controller/flap_controller.c
 )
 
 # Add include paths
@@ -66,6 +67,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Components/gui
     Components/analog_keyboard
     Components/ui
+    Components/flap_controller
 )
 
 # Add project symbols (macros)
