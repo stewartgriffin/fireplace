@@ -39,12 +39,21 @@ typedef enum
 }gui_focus_t;
 
 /**************************************           DEFINES                    ******************************************/
+#define GUI_SCREEN_SIZE 80  ///< Total screen size (rows * columns)
 
 /**************************************    GLOBAL FUNCTION DECLARATIONS      ******************************************/
 
 /**
+ * @brief Initialize GUI module
+ * @param update_partial_screen Callback for partial screen updates
+ *        Returns 0 on success, -1 if display is busy
+ */
+void gui_init(int (*update_partial_screen)(const char *buffer, uint16_t position, uint16_t length));
+
+/**
  * @brief Main GUI update function
- * Call periodically to update blinking and display state
+ * Call periodically to update blinking, compare buffers, and send changes to display
+ * Automatically handles display busy status and retries
  */
 void gui_main(void);
 

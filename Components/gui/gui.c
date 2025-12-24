@@ -28,6 +28,12 @@
 #define GUI_BLINK_OFF_TIME_MS  300
 
 /**************************************           DATA TYPES                 ******************************************/
+typedef enum
+{
+	GUI_UPDATE_IDLE,     // Ready to scan for changes
+	GUI_UPDATE_SCANNING, // Currently scanning for next changed region
+	GUI_UPDATE_SENDING   // Attempting to send a changed region
+} gui_update_state_t;
 
 /**************************************           CONSTANTS                  ******************************************/
 
@@ -43,6 +49,16 @@ static gui_focus_t current_focus = GUI_FOCUS_NONE;
 static bool blink_state = true;  // true = visible, false = hidden
 static uint32_t last_blink_toggle_time = 0;
 static char focused_field_backup[2] = {' ', ' '};  // Backup of the 2 digits being blinked
+
+// Display update tracking
+static char display_buffer[80];  // What's currently shown on LCD (no null terminator)
+static int (*update_partial_screen_callback)(const char *buffer, uint16_t position, uint16_t length) = NULL;
+static gui_update_state_t update_state = GUI_UPDATE_IDLE;
+static uint16_t scan_position = 0;
+static uint16_t change_start = 0;
+static uint16_t change_length = 0;
+static char change_buffer[2][80];  // Double buffer for changed regions (prevents corruption while HD44780 reads)
+static uint8_t active_change_buffer = 0;  // Which buffer is currently being filled (0 or 1)
 
 char screen_buffer[81] =  // 80 chars + null terminator for safe snprintf
 {
@@ -67,27 +83,47 @@ static void format_3digit_right_justified(char *buffer, uint8_t value);
 static uint8_t get_focus_position(gui_focus_t focus);
 static void apply_blink_state(void);
 static void gui_focus(gui_focus_t focus);
+static void process_display_updates(void);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
+void gui_init(int (*update_partial_screen)(const char *buffer, uint16_t position, uint16_t length))
+{
+	update_partial_screen_callback = update_partial_screen;
+	update_state = GUI_UPDATE_IDLE;
+	scan_position = 0;
+
+	// Initialize display_buffer to all spaces (blank LCD)
+	// This ensures all initial content (including static labels) gets sent
+	for (uint16_t i = 0; i < 80; i++)
+	{
+		display_buffer[i] = ' ';
+	}
+}
+
 void gui_main(void)
 {
-	if (current_focus == GUI_FOCUS_NONE)
+	// Handle blinking
+	if (current_focus != GUI_FOCUS_NONE)
 	{
-		return;
+		uint32_t current_time = HAL_GetTick();
+		uint32_t blink_period = blink_state ? GUI_BLINK_ON_TIME_MS : GUI_BLINK_OFF_TIME_MS;
+
+		// Check if it's time to toggle blink state
+		if ((current_time - last_blink_toggle_time) >= blink_period)
+		{
+			// Toggle blink state
+			blink_state = !blink_state;
+			last_blink_toggle_time = current_time;
+
+			// Apply the new blink state to screen buffer
+			apply_blink_state();
+		}
 	}
 
-	uint32_t current_time = HAL_GetTick();
-	uint32_t blink_period = blink_state ? GUI_BLINK_ON_TIME_MS : GUI_BLINK_OFF_TIME_MS;
-
-	// Check if it's time to toggle blink state
-	if ((current_time - last_blink_toggle_time) >= blink_period)
+	// Process display updates (compare buffers and send changes)
+	if (update_partial_screen_callback != NULL)
 	{
-		// Toggle blink state
-		blink_state = !blink_state;
-		last_blink_toggle_time = current_time;
-
-		// Apply the new blink state to screen buffer
-		apply_blink_state();
+		process_display_updates();
 	}
 }
 
@@ -363,5 +399,90 @@ static void format_3digit_right_justified(char *buffer, uint8_t value)
 		buffer[0] = ' ';
 		buffer[1] = ' ';
 		buffer[2] = '0' + value;
+	}
+}
+
+static void process_display_updates(void)
+{
+	switch (update_state)
+	{
+		case GUI_UPDATE_IDLE:
+			// Start scanning from beginning
+			scan_position = 0;
+			update_state = GUI_UPDATE_SCANNING;
+			// Fall through to start scanning immediately
+			__attribute__((fallthrough));
+
+		case GUI_UPDATE_SCANNING:
+		{
+			// Scan for next continuous changed region
+			bool found_change = false;
+			change_start = 0;
+			change_length = 0;
+
+			// Find start of next changed region
+			while (scan_position < 80)
+			{
+				if (screen_buffer[scan_position] != display_buffer[scan_position])
+				{
+					found_change = true;
+					change_start = scan_position;
+					break;
+				}
+				scan_position++;
+			}
+
+			if (!found_change)
+			{
+				// No more changes found, return to IDLE
+				update_state = GUI_UPDATE_IDLE;
+				return;
+			}
+
+			// Found start of change, now find the length of continuous changed region
+			change_length = 0;
+			while (scan_position < 80 &&
+			       screen_buffer[scan_position] != display_buffer[scan_position])
+			{
+				// Copy to the currently active change buffer
+				change_buffer[active_change_buffer][change_length] = screen_buffer[scan_position];
+				change_length++;
+				scan_position++;
+			}
+
+			// Move to SENDING state
+			update_state = GUI_UPDATE_SENDING;
+			// Fall through to send immediately
+			__attribute__((fallthrough));
+		}
+
+		case GUI_UPDATE_SENDING:
+		{
+			// Try to send the changed region (from the active buffer)
+			// Get pointer to the active buffer
+			char *send_buffer = &change_buffer[active_change_buffer][0];
+			int result = update_partial_screen_callback(send_buffer, change_start, change_length);
+
+			if (result == 0)
+			{
+				// Success - update display_buffer with sent data
+				for (uint16_t i = 0; i < change_length; i++)
+				{
+					display_buffer[change_start + i] = change_buffer[active_change_buffer][i];
+				}
+
+				// Switch to the other buffer (HD44780 will keep reading from the old one)
+				active_change_buffer = 1 - active_change_buffer;
+
+				// Continue scanning for more changes
+				update_state = GUI_UPDATE_SCANNING;
+			}
+			else
+			{
+				// Display is busy, stay in SENDING state and try again later
+				// Don't advance scan_position, we'll retry the same region
+			}
+			break;
+		}
 	}
 }

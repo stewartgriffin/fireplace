@@ -92,7 +92,8 @@ void ui_wrapper_set_input_right(bool state);
 void ui_wrapper_set_input_ok(bool state);
 void fireplace_flap_set_pwm(uint16_t pwm_value);
 void ventilation_flap_set_pwm(uint16_t pwm_value);
-	
+int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uint16_t length);
+
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 void fireplace_init(void)
 {
@@ -114,6 +115,9 @@ void fireplace_init(void)
 			ui_increase_time_callback,
 			ui_decrease_time_callback,
 			ui_time_edit_mode_callback);
+
+	// Initialize GUI with partial screen update callback
+	gui_init(gui_update_partial_screen_wrapper);
 
 	// Initialize flap controllers (5 seconds transition time)
 	flap_controller_init(&fireplace_flap, fireplace_flap_set_pwm, 0);
@@ -166,10 +170,10 @@ void fireplace_main(void)
 		}
 	}
 
-	if (HAL_GetTick() % 100 == 0)
-	{
-		hd44780_write_buffer(&display,gui_get_screen_buffer());
-	}
+	// if (HAL_GetTick() % 100 == 0)
+	// {
+	// 	hd44780_write_buffer(&display,gui_get_screen_buffer());
+	// }
 
 	current_temperature = max6675_get_temperature(&thermocouple);
 }
@@ -446,4 +450,11 @@ void fireplace_flap_set_pwm(uint16_t pwm_value)
 void ventilation_flap_set_pwm(uint16_t pwm_value)
 {
 	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pwm_value);
+}
+
+int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uint16_t length)
+{
+	// Wrapper for hd44780_write_buffer_at_position
+	// Returns 0 on success, -1 if display is busy
+	return hd44780_write_buffer_at_position(&display, buffer, position, length);
 }
