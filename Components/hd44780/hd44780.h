@@ -83,6 +83,13 @@ typedef struct
 	uint16_t buffer_write_total;        ///< Total buffer size
 	const char * buffer_ptr;            ///< Pointer to buffer being written
 
+	// Partial buffer write state (for write_buffer_at_position)
+	bool buffer_write_partial;          ///< True if doing partial buffer update
+	uint16_t buffer_write_start_pos;    ///< Starting linear position (0 to rows*columns-1)
+	uint16_t buffer_write_length;       ///< Number of characters to write
+	uint16_t buffer_write_chars_sent;   ///< Number of characters sent so far
+	bool buffer_write_need_cursor;      ///< True if cursor positioning needed before next char
+
 	/**
 	 * @brief Function pointer for updating display pins via GPIO expander
 	 * @param d4_d7 4-bit data nibble (lower 4 bits)
@@ -131,6 +138,18 @@ void hd44780_transfer_complete(hd44780_data_t * this);
  * @return 0 on success, -1 if write already in progress
  */
 int hd44780_write_buffer(hd44780_data_t * this, const char * buffer);
+
+/**
+ * @brief Write partial buffer to display at specific position
+ * More efficient than full buffer write when only a few characters change
+ * @param this Pointer to HD44780 data structure
+ * @param buffer Pointer to buffer containing data to write
+ * @param position Linear position on screen (0 to rows*columns-1, row-major order)
+ * @param length Number of characters to write (must not exceed screen bounds)
+ * @return 0 on success, -1 if write already in progress or invalid parameters
+ */
+int hd44780_write_buffer_at_position(hd44780_data_t * this, const char * buffer,
+									uint16_t position, uint16_t length);
 
 /* CPP GUARD END */
 #ifdef __cplusplus

@@ -88,6 +88,11 @@ void hd44780_init(hd44780_data_t * this,
 	this->buffer_write_index = 0;
 	this->buffer_write_total = 0;
 	this->buffer_ptr = NULL;
+	this->buffer_write_partial = false;
+	this->buffer_write_start_pos = 0;
+	this->buffer_write_length = 0;
+	this->buffer_write_chars_sent = 0;
+	this->buffer_write_need_cursor = false;
 }
 
 void hd44780_main(hd44780_data_t * this)
@@ -283,45 +288,125 @@ void hd44780_main(hd44780_data_t * this)
 		{
 			case HD44780_TRANSFER_IDLE:
 				// Ready to send next byte from buffer
-				if (this->buffer_write_in_progress && this->buffer_write_index < this->buffer_write_total)
+				if (this->buffer_write_in_progress)
 				{
-					uint16_t chars_written = this->buffer_write_index % (this->columns + 1);
-
-					if (chars_written == 0)
+					// Check if we're doing partial or full buffer write
+					if (this->buffer_write_partial)
 					{
-						// Send cursor position command for new row
-						uint8_t row_offsets[] = {HD44780_ROW1_ADDR, HD44780_ROW2_ADDR,
-						                         HD44780_ROW3_ADDR, HD44780_ROW4_ADDR};
-						uint8_t current_row = this->buffer_write_index / (this->columns + 1);
-						this->current_byte = HD44780_CMD_SET_DDRAM_ADDR | row_offsets[current_row];
-						this->current_rs = false;
-						uint8_t nibble = (this->current_byte >> 4) & 0x0F;
-						this->transfer_complete = false;
-						this->update_pins(nibble, false, true);
-						this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+						// Partial buffer write mode
+						if (this->buffer_write_chars_sent < this->buffer_write_length)
+						{
+							if (this->buffer_write_need_cursor)
+							{
+								// Send cursor positioning command
+								// Calculate current absolute position
+								uint16_t current_pos = this->buffer_write_start_pos + this->buffer_write_chars_sent;
+								uint8_t current_row = current_pos / this->columns;
+								uint8_t current_col = current_pos % this->columns;
+
+								uint8_t row_offsets[] = {HD44780_ROW1_ADDR, HD44780_ROW2_ADDR,
+								                         HD44780_ROW3_ADDR, HD44780_ROW4_ADDR};
+								this->current_byte = HD44780_CMD_SET_DDRAM_ADDR | (row_offsets[current_row] + current_col);
+								this->current_rs = false;
+								uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+								this->transfer_complete = false;
+								this->update_pins(nibble, false, true);
+								this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+								this->buffer_write_need_cursor = false;
+								return;
+							}
+							else
+							{
+								// Send character data
+								this->current_byte = (uint8_t)this->buffer_ptr[this->buffer_write_chars_sent];
+								this->current_rs = true;
+								uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+								this->transfer_complete = false;
+								this->update_pins(nibble, true, true);
+								this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+
+								this->buffer_write_chars_sent++;
+
+								// Check if next character is on a different row (need cursor command)
+								if (this->buffer_write_chars_sent < this->buffer_write_length)
+								{
+									uint16_t prev_pos = this->buffer_write_start_pos + this->buffer_write_chars_sent - 1;
+									uint16_t next_pos = this->buffer_write_start_pos + this->buffer_write_chars_sent;
+									uint8_t prev_row = prev_pos / this->columns;
+									uint8_t next_row = next_pos / this->columns;
+
+									if (next_row != prev_row)
+									{
+										this->buffer_write_need_cursor = true;
+									}
+								}
+
+								// Check if we're done
+								if (this->buffer_write_chars_sent >= this->buffer_write_length)
+								{
+									this->buffer_write_in_progress = false;
+								}
+
+								return;
+							}
+						}
+						else
+						{
+							// Partial write complete
+							this->buffer_write_in_progress = false;
+							this->state = HD44780_STATE_IDLE;
+						}
 					}
 					else
 					{
-						// Send character data
-						uint16_t buffer_char_index = (this->buffer_write_index / (this->columns + 1)) *
-						                             this->columns + (chars_written - 1);
-						this->current_byte = (uint8_t)this->buffer_ptr[buffer_char_index];
-						this->current_rs = true;
-						uint8_t nibble = (this->current_byte >> 4) & 0x0F;
-						this->transfer_complete = false;
-						this->update_pins(nibble, true, true);
-						this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+						// Full buffer write mode (existing logic)
+						if (this->buffer_write_index < this->buffer_write_total)
+						{
+							uint16_t chars_written = this->buffer_write_index % (this->columns + 1);
+
+							if (chars_written == 0)
+							{
+								// Send cursor position command for new row
+								uint8_t row_offsets[] = {HD44780_ROW1_ADDR, HD44780_ROW2_ADDR,
+								                         HD44780_ROW3_ADDR, HD44780_ROW4_ADDR};
+								uint8_t current_row = this->buffer_write_index / (this->columns + 1);
+								this->current_byte = HD44780_CMD_SET_DDRAM_ADDR | row_offsets[current_row];
+								this->current_rs = false;
+								uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+								this->transfer_complete = false;
+								this->update_pins(nibble, false, true);
+								this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+							}
+							else
+							{
+								// Send character data
+								uint16_t buffer_char_index = (this->buffer_write_index / (this->columns + 1)) *
+								                             this->columns + (chars_written - 1);
+								this->current_byte = (uint8_t)this->buffer_ptr[buffer_char_index];
+								this->current_rs = true;
+								uint8_t nibble = (this->current_byte >> 4) & 0x0F;
+								this->transfer_complete = false;
+								this->update_pins(nibble, true, true);
+								this->transfer_state = HD44780_TRANSFER_HIGH_NIBBLE_E_LOW;
+							}
+
+							this->buffer_write_index++;
+
+							// Check if we're done with the entire buffer
+							if (this->buffer_write_index >= this->buffer_write_total)
+							{
+								this->buffer_write_in_progress = false;
+							}
+
+							return;
+						}
+						else
+						{
+							// Full buffer write complete
+							this->buffer_write_in_progress = false;
+							this->state = HD44780_STATE_IDLE;
+						}
 					}
-
-					this->buffer_write_index++;
-
-					// Check if we're done with the entire buffer
-					if (this->buffer_write_index >= this->buffer_write_total)
-					{
-						this->buffer_write_in_progress = false;
-					}
-
-					return;
 				}
 				else
 				{
@@ -392,6 +477,46 @@ int hd44780_write_buffer(hd44780_data_t * this, const char * buffer)
 	// Total includes: rows * (1 command + columns characters)
 	this->buffer_write_total = this->rows * (this->columns + 1);
 	this->buffer_write_in_progress = true;
+	this->buffer_write_partial = false;  // Full buffer write
+
+	// Move to TRANSFER state to start processing the buffer
+	this->state = HD44780_STATE_TRANSFER;
+	this->transfer_state = HD44780_TRANSFER_IDLE;
+	this->delay = 0;
+
+	return 0;  // Success
+}
+
+int hd44780_write_buffer_at_position(hd44780_data_t * this, const char * buffer,
+									uint16_t position, uint16_t length)
+{
+	// Only accept new buffer write when in IDLE state and not already writing
+	if (this->state != HD44780_STATE_IDLE || this->buffer_write_in_progress)
+	{
+		return -1;  // Error: busy or not ready
+	}
+
+	// Validate parameters
+	uint16_t total_screen_size = (uint16_t)this->rows * (uint16_t)this->columns;
+	if (position >= total_screen_size || length == 0)
+	{
+		return -1;  // Error: invalid position or length
+	}
+
+	// Check that write doesn't exceed screen bounds
+	if (position + length > total_screen_size)
+	{
+		return -1;  // Error: write would exceed screen size
+	}
+
+	// Set up partial buffer write
+	this->buffer_ptr = buffer;
+	this->buffer_write_start_pos = position;
+	this->buffer_write_length = length;
+	this->buffer_write_chars_sent = 0;
+	this->buffer_write_need_cursor = true;  // Always start with cursor positioning
+	this->buffer_write_in_progress = true;
+	this->buffer_write_partial = true;
 
 	// Move to TRANSFER state to start processing the buffer
 	this->state = HD44780_STATE_TRANSFER;
