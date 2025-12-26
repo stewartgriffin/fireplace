@@ -54,11 +54,10 @@ void ds3231_init(ds3231_data_t * this,
 {
 	this->i2c_read = i2c_read;
 	this->i2c_write = i2c_write;
-	this->oscillator_not_started = false;
-	this->oscillator_check_pending = true;
+	this->osf_clear_pending = false;
 	this->time_read_in_progress = false;
 	this->time_read_paused = false;
-	this->status_read_in_progress = false;
+	this->status_read_in_progress = true;  // Status read initiated below
 	this->alarm1_update_request = false;
 	this->alarm1_update_waiting_for_interrupt = false;
 	this->alarm2_update_request = false;
@@ -70,164 +69,201 @@ void ds3231_init(ds3231_data_t * this,
 	this->tick_timer = 0;
 	this->last_tick = HAL_GetTick();
 
-	// Request read of status registers to check oscillator stop flag
+	// Start in PREINIT state - query status register to check oscillator state
+	this->state = DS3231_STATE_PREINIT;
 	this->i2c_read(DS3231_STATUS_START_ADDRESS, this->rx_buffer, DS3231_STATUS_LENGTH);
 }
 
 void ds3231_main(ds3231_data_t * this)
 {
-	// Check if we need to wake up the oscillator
-	if (this->oscillator_not_started == true)
+	switch (this->state)
 	{
-		// Wake up DS3231 by writing to it (first-time power-on initialization)
-		// This is required to start the oscillator on first VBAT application
-		// According to DS3231 datasheet, oscillator won't start until VCC exceeds VPF
-		// threshold OR a valid I2C write occurs
-		uint8_t dummy_data = 0x00;
-		this->tx_buffer[0] = dummy_data;
-		this->i2c_write(DS3231_CURRENT_TIME_START_ADDRESS, this->tx_buffer, 1);
-		this->oscillator_not_started = false;
-		return;
-	}
+		case DS3231_STATE_PREINIT:
+			// In PREINIT, oscillator state is unknown
+			// Wait for initial status read to complete (handled in interrupt)
+			// Don't start any operations until we know if OSF needs clearing
+			break;
 
-	if (this->time_update_request == true)
-	{
-		this->time_update_request = false;
-		this->time_update_waiting_for_interrupt = true;
-		serialize_current_time(this);
-		this->i2c_write(DS3231_CURRENT_TIME_START_ADDRESS, this->tx_buffer, DS3231_CURRENT_TIME_LENGTH);
-		return;
-	}
+		case DS3231_STATE_CLEARING_OSF:
+			// Clear the OSF (Oscillator Stop Flag) in Control/Status register (0x0F, bit 7)
+			// OSF must be explicitly cleared by writing 0 to bit 7
+			// Also preserve other bits in the control/status register
+			this->tx_buffer[0] = this->control;         // Control register (0x0E)
+			this->tx_buffer[1] = this->control_status & 0x7F;  // Clear OSF bit (bit 7)
+			this->i2c_write(DS3231_STATUS_START_ADDRESS, this->tx_buffer, 2);
+			this->osf_clear_pending = true;
+			// Stay in CLEARING_OSF state (transition to IDLE happens in interrupt)
+			break;
 
-	if (this->alarm1_update_request == true)
-	{
-		this->alarm1_update_request = false;
-		this->alarm1_update_waiting_for_interrupt = true;
-		serialize_alarm1(this);
-		this->i2c_write(DS3231_ALARM1_START_ADDRESS, this->tx_buffer, DS3231_ALARM1_LENGTH);
-		return;
-	}
+		case DS3231_STATE_IDLE:
+			// Ready for operations - check for pending requests
 
-	if (this->alarm2_update_request == true)
-	{
-		this->alarm2_update_request = false;
-		this->alarm2_update_waiting_for_interrupt = true;
-		serialize_alarm2(this);
-		this->i2c_write(DS3231_ALARM2_START_ADDRESS, this->tx_buffer, DS3231_ALARM2_LENGTH);
-		return;
-	}
+			if (this->time_update_request == true)
+			{
+				this->time_update_request = false;
+				this->time_update_waiting_for_interrupt = true;
+				serialize_current_time(this);
+				this->i2c_write(DS3231_CURRENT_TIME_START_ADDRESS, this->tx_buffer, DS3231_CURRENT_TIME_LENGTH);
+				this->state = DS3231_STATE_RUNNING;
+				return;
+			}
 
-	if (this->alarm1_read_request == true)
-	{
-		this->alarm1_read_request = false;
-		this->alarm1_read_in_progress = true;
-		this->i2c_read(DS3231_ALARM1_START_ADDRESS, this->rx_buffer, DS3231_ALARM1_LENGTH);
-		return;
-	}
+			if (this->alarm1_update_request == true)
+			{
+				this->alarm1_update_request = false;
+				this->alarm1_update_waiting_for_interrupt = true;
+				serialize_alarm1(this);
+				this->i2c_write(DS3231_ALARM1_START_ADDRESS, this->tx_buffer, DS3231_ALARM1_LENGTH);
+				this->state = DS3231_STATE_RUNNING;
+				return;
+			}
 
-	if (this->alarm2_read_request == true)
-	{
-		this->alarm2_read_request = false;
-		this->alarm2_read_in_progress = true;
-		this->i2c_read(DS3231_ALARM2_START_ADDRESS, this->rx_buffer, DS3231_ALARM2_LENGTH);
-		return;
-	}
+			if (this->alarm2_update_request == true)
+			{
+				this->alarm2_update_request = false;
+				this->alarm2_update_waiting_for_interrupt = true;
+				serialize_alarm2(this);
+				this->i2c_write(DS3231_ALARM2_START_ADDRESS, this->tx_buffer, DS3231_ALARM2_LENGTH);
+				this->state = DS3231_STATE_RUNNING;
+				return;
+			}
 
-	// Calculate elapsed time since last call
-	uint32_t current_tick = HAL_GetTick();
-	uint32_t elapsed_ms = current_tick - this->last_tick;
-	this->last_tick = current_tick;
+			if (this->alarm1_read_request == true)
+			{
+				this->alarm1_read_request = false;
+				this->alarm1_read_in_progress = true;
+				this->i2c_read(DS3231_ALARM1_START_ADDRESS, this->rx_buffer, DS3231_ALARM1_LENGTH);
+				this->state = DS3231_STATE_RUNNING;
+				return;
+			}
 
-	// Read current time at specified period (unless paused)
-	if (!this->time_read_paused && (this->tick_timer % DS3231_TIME_READ_PERIOD_MS == 0))
-	{
-		this->time_read_in_progress = true;
-		this->i2c_read(DS3231_CURRENT_TIME_START_ADDRESS, this->rx_buffer, DS3231_CURRENT_TIME_LENGTH);
-	}
+			if (this->alarm2_read_request == true)
+			{
+				this->alarm2_read_request = false;
+				this->alarm2_read_in_progress = true;
+				this->i2c_read(DS3231_ALARM2_START_ADDRESS, this->rx_buffer, DS3231_ALARM2_LENGTH);
+				this->state = DS3231_STATE_RUNNING;
+				return;
+			}
 
-	// Read status registers at specified period (offset by 50ms to avoid collision)
-	if ((this->tick_timer + 50) % DS3231_STATUS_READ_PERIOD_MS == 0)
-	{
-		this->status_read_in_progress = true;
-		this->i2c_read(DS3231_STATUS_START_ADDRESS, this->rx_buffer, DS3231_STATUS_LENGTH);
-	}
+			// Calculate elapsed time since last call
+			uint32_t current_tick = HAL_GetTick();
+			uint32_t elapsed_ms = current_tick - this->last_tick;
+			this->last_tick = current_tick;
 
-	// Increment tick timer
-	this->tick_timer += elapsed_ms;
+			// Read current time at specified period (unless paused)
+			if (!this->time_read_paused && (this->tick_timer % DS3231_TIME_READ_PERIOD_MS == 0))
+			{
+				this->time_read_in_progress = true;
+				this->i2c_read(DS3231_CURRENT_TIME_START_ADDRESS, this->rx_buffer, DS3231_CURRENT_TIME_LENGTH);
+				this->state = DS3231_STATE_RUNNING;
+			}
 
-	// Wrap timer to prevent overflow
-	if (this->tick_timer >= DS3231_TIMER_MAX_MS)
-	{
-		this->tick_timer = 0;
+			// Read status registers at specified period (offset by 50ms to avoid collision)
+			if ((this->tick_timer + 50) % DS3231_STATUS_READ_PERIOD_MS == 0)
+			{
+				this->status_read_in_progress = true;
+				this->i2c_read(DS3231_STATUS_START_ADDRESS, this->rx_buffer, DS3231_STATUS_LENGTH);
+				this->state = DS3231_STATE_RUNNING;
+			}
+
+			// Increment tick timer
+			this->tick_timer += elapsed_ms;
+
+			// Wrap timer to prevent overflow
+			if (this->tick_timer >= DS3231_TIMER_MAX_MS)
+			{
+				this->tick_timer = 0;
+			}
+			break;
+
+		case DS3231_STATE_RUNNING:
+			// Active transmission in progress - wait for interrupt
+			// Don't start any new operations
+			break;
 	}
 }
 
 void ds3231_interrupt(ds3231_data_t * this)
 {
-	// Check if this interrupt is from initial oscillator check
-	if (this->oscillator_check_pending == true)
+	switch (this->state)
 	{
-		this->oscillator_check_pending = false;
-		// Deserialize status registers
-		deserialize_status(this);
-		// Check OSF bit in Control/Status register (0x0F)
-		// OSF bit is bit 7 (0x80) of control_status register
-		if (this->control_status & DS3231_STATUS_REG_OSF_BIT)
-		{
-			this->oscillator_not_started = true;
-		}
-	}
-	else if (this->time_update_waiting_for_interrupt == true)
-	{
-		this->time_update_waiting_for_interrupt = false;
-	}
-	else if (this->alarm1_update_waiting_for_interrupt == true)
-	{
-		this->alarm1_update_waiting_for_interrupt = false;
-	}
-	else if (this->alarm2_update_waiting_for_interrupt == true)
-	{
-		this->alarm2_update_waiting_for_interrupt = false;
-	}
-	else if (this->time_update_request == true)
-	{
-		// Request still pending, do nothing
-	}
-	else if (this->alarm1_update_request == true)
-	{
-		// Request still pending, do nothing
-	}
-	else if (this->alarm2_update_request == true)
-	{
-		// Request still pending, do nothing
-	}
-	else if (this->alarm1_read_request == true)
-	{
-		// Request still pending, do nothing
-	}
-	else if (this->alarm2_read_request == true)
-	{
-		// Request still pending, do nothing
-	}
-	else if (this->status_read_in_progress == true)
-	{
-		this->status_read_in_progress = false;
-		deserialize_status(this);
-	}
-	else if (this->time_read_in_progress == true)
-	{
-		this->time_read_in_progress = false;
-		deserialize_current_time(this);
-	}
-	else if (this->alarm1_read_in_progress == true)
-	{
-		this->alarm1_read_in_progress = false;
-		deserialize_alarm1(this);
-	}
-	else if (this->alarm2_read_in_progress == true)
-	{
-		this->alarm2_read_in_progress = false;
-		deserialize_alarm2(this);
+		case DS3231_STATE_PREINIT:
+			// Initial status read completed - check OSF flag
+			this->status_read_in_progress = false;
+			deserialize_status(this);
+
+			// Check OSF bit in Control/Status register (0x0F)
+			// OSF bit is bit 7 (0x80) of control_status register
+			if (this->control_status & DS3231_STATUS_REG_OSF_BIT)
+			{
+				// OSF is set - need to clear it (virgin DS3231)
+				this->state = DS3231_STATE_CLEARING_OSF;
+			}
+			else
+			{
+				// OSF not set - oscillator is running, go to IDLE
+				this->state = DS3231_STATE_IDLE;
+			}
+			break;
+
+		case DS3231_STATE_CLEARING_OSF:
+			// OSF clear write completed
+			if (this->osf_clear_pending)
+			{
+				this->osf_clear_pending = false;
+				// Transition to IDLE - initialization complete
+				this->state = DS3231_STATE_IDLE;
+			}
+			break;
+
+		case DS3231_STATE_IDLE:
+			// Should not receive interrupts in IDLE state
+			// (only happens if there's a race condition)
+			break;
+
+		case DS3231_STATE_RUNNING:
+			// Handle various interrupt sources and return to IDLE
+			if (this->time_update_waiting_for_interrupt == true)
+			{
+				this->time_update_waiting_for_interrupt = false;
+				this->state = DS3231_STATE_IDLE;
+			}
+			else if (this->alarm1_update_waiting_for_interrupt == true)
+			{
+				this->alarm1_update_waiting_for_interrupt = false;
+				this->state = DS3231_STATE_IDLE;
+			}
+			else if (this->alarm2_update_waiting_for_interrupt == true)
+			{
+				this->alarm2_update_waiting_for_interrupt = false;
+				this->state = DS3231_STATE_IDLE;
+			}
+			else if (this->status_read_in_progress == true)
+			{
+				this->status_read_in_progress = false;
+				deserialize_status(this);
+				this->state = DS3231_STATE_IDLE;
+			}
+			else if (this->time_read_in_progress == true)
+			{
+				this->time_read_in_progress = false;
+				deserialize_current_time(this);
+				this->state = DS3231_STATE_IDLE;
+			}
+			else if (this->alarm1_read_in_progress == true)
+			{
+				this->alarm1_read_in_progress = false;
+				deserialize_alarm1(this);
+				this->state = DS3231_STATE_IDLE;
+			}
+			else if (this->alarm2_read_in_progress == true)
+			{
+				this->alarm2_read_in_progress = false;
+				deserialize_alarm2(this);
+				this->state = DS3231_STATE_IDLE;
+			}
+			break;
 	}
 }
 

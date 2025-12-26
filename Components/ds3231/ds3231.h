@@ -37,6 +37,14 @@ typedef enum
 	DS3231_ADJUST_DOWN
 }ds3231_adjust_dir_t;
 
+typedef enum
+{
+	DS3231_STATE_PREINIT,       // Oscillator state unknown, query status register
+	DS3231_STATE_CLEARING_OSF,  // Clear Oscillator Stop Flag for virgin DS3231
+	DS3231_STATE_IDLE,          // Ready for operations, do nothing
+	DS3231_STATE_RUNNING        // Active transmission in progress
+}ds3231_state_t;
+
 typedef struct
 {
 	uint8_t second;
@@ -50,6 +58,9 @@ typedef struct
 
 typedef struct
 {
+	// State machine
+	ds3231_state_t state;
+
 	uint32_t tick_timer;
 	uint32_t last_tick;  // Last HAL_GetTick() value for calculating elapsed time
 	bool time_update_request;
@@ -65,8 +76,7 @@ typedef struct
 	bool time_read_in_progress;
 	bool time_read_paused;
 	bool status_read_in_progress;
-	bool oscillator_not_started;
-	bool oscillator_check_pending;
+	bool osf_clear_pending;  // True when OSF flag needs to be cleared
 	uint8_t mem_address;  // Current memory address for I2C operations
 	int (* i2c_read)(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
 	int (* i2c_write)(uint8_t mem_addr, uint8_t *data, uint16_t data_size);
