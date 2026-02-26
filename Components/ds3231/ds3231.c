@@ -212,6 +212,17 @@ void ds3231_interrupt(ds3231_data_t * this)
 			if (this->osf_clear_pending)
 			{
 				this->osf_clear_pending = false;
+
+				// RTC was uninitialized - set a known default date/time (26.02.2026 00:00:00)
+				this->current_time.second       = 0;
+				this->current_time.minute       = 0;
+				this->current_time.hour         = 0;
+				this->current_time.day_of_week  = 4;  // Thursday
+				this->current_time.day_of_month = 26;
+				this->current_time.month        = 2;
+				this->current_time.year         = 26; // 2026
+				this->time_update_request       = true;
+
 				// Transition to IDLE - initialization complete
 				this->state = DS3231_STATE_IDLE;
 			}
