@@ -23,64 +23,91 @@ extern "C" {
 /**************************************           DATA TYPES                 ******************************************/
 
 /**
- * @brief Function pointer type for PWM control
- * @param pwm_value PWM compare value (900-1600 for servo motion: 0.9ms-1.6ms)
+ * @brief Function pointer type for GPIO control
+ * @param state 1 to activate (set high), 0 to deactivate (set low)
  */
-typedef void (*flap_set_pwm_t)(uint16_t pwm_value);
+typedef void (*flap_set_gpio_t)(uint8_t state);
+
+/**
+ * @brief Internal state of flap motion
+ */
+typedef enum {
+    FLAP_STATE_IDLE,    // No motion, both pins inactive
+    FLAP_STATE_OPENING, // Open pin active, counting elapsed time
+    FLAP_STATE_CLOSING  // Close pin active, counting elapsed time
+} flap_state_t;
 
 /**
  * @brief Flap controller data structure
- * Each flap instance is independent with its own data structure
+ * Each flap instance is independent with its own data structure.
+ * current_position represents the known position (0-100%) after completed motions.
+ * On startup it is assumed to be 0 (fully closed). Call set_position(0) to physically
+ * enforce a known closed state before first use.
  */
 typedef struct {
-	// Function pointer for hardware abstraction
-	flap_set_pwm_t set_pwm;
+    // Function pointers for hardware abstraction
+    flap_set_gpio_t set_open_pin;
+    flap_set_gpio_t set_close_pin;
 
-	// Current position in fixed-point (0-10000 representing 0.00%-100.00%)
-	// Scale factor: 100 (centipercent representation)
-	int16_t current_position;
+    // Current known position (0-100%), updated when motion completes
+    uint8_t current_position;
 
-	// Target position (0-100%)
-	uint8_t target_position;
+    // Requested target position (0-100%)
+    uint8_t target_position;
 
-	// Transition time in seconds (time to move from 0% to 100%)
-	uint16_t transition_time_seconds;
+    // Time in milliseconds for a full 0->100% travel (opening)
+    uint32_t open_travel_time_ms;
 
-	// Timing management
-	uint32_t last_update_tick;
+    // Time in milliseconds for a full 100->0% travel (closing)
+    uint32_t close_travel_time_ms;
+
+    // Internal motion state
+    flap_state_t state;
+    uint32_t motion_start_tick;
+    uint32_t motion_duration_ms;
 } flap_controller_data_t;
 
 /**************************************           DEFINES                    ******************************************/
+
+/** Default travel times if not specified */
+#define FLAP_DEFAULT_OPEN_TRAVEL_TIME_MS  3000U
+#define FLAP_DEFAULT_CLOSE_TRAVEL_TIME_MS 3000U
 
 /**************************************    GLOBAL FUNCTION DECLARATIONS      ******************************************/
 
 /**
  * @brief Initialize flap controller
  * @param data Pointer to flap controller data structure
- * @param set_pwm Function pointer to set flap PWM
- * @param transition_time_seconds Time in seconds for full 0-100% transition (0 = instantaneous, recommended: 5-10 seconds)
+ * @param set_open_pin Function pointer to activate/deactivate the open GPIO pin
+ * @param set_close_pin Function pointer to activate/deactivate the close GPIO pin
+ * @param open_travel_time_ms Time in milliseconds for a full 0->100% travel
+ * @param close_travel_time_ms Time in milliseconds for a full 100->0% travel
  */
 void flap_controller_init(flap_controller_data_t *data,
-						  flap_set_pwm_t set_pwm,
-						  uint16_t transition_time_seconds);
+                          flap_set_gpio_t set_open_pin,
+                          flap_set_gpio_t set_close_pin,
+                          uint32_t open_travel_time_ms,
+                          uint32_t close_travel_time_ms);
 
 /**
- * @brief Main function - call periodically to update flap position
+ * @brief Main function - call periodically (e.g. every 10ms) to drive motion timing
  * @param data Pointer to flap controller data structure
  */
 void flap_controller_main(flap_controller_data_t *data);
 
 /**
- * @brief Set target position for flap
+ * @brief Request a new target position
+ * If motion is already in progress it is stopped and current_position is
+ * recalculated from elapsed time before the new motion begins.
  * @param data Pointer to flap controller data structure
  * @param position Target position in percentage (0-100)
  */
 void flap_controller_set_position(flap_controller_data_t *data, uint8_t position);
 
 /**
- * @brief Get current flap position
+ * @brief Get the last confirmed position (updated when motion completes)
  * @param data Pointer to flap controller data structure
- * @return Current position in percentage (0-100)
+ * @return Position in percentage (0-100)
  */
 uint8_t flap_controller_get_position(flap_controller_data_t *data);
 

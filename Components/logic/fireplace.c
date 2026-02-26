@@ -23,7 +23,6 @@
 #include "ui.h"
 #include "i2c.h"
 #include "gui.h"
-#include "tim.h"
 #include "flap_controller.h"
 #include "daily_schedule.h"
 
@@ -61,9 +60,6 @@ flap_controller_data_t ventilation_flap;
 
 daily_schedule_data_t ventilation_daily_schedule;
 
-// Test variables for flap position cycling
-static uint8_t test_flap_position = 0;
-static uint32_t last_flap_change_time = 0;
 
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size);
@@ -90,8 +86,10 @@ void ui_wrapper_set_input_down(bool state);
 void ui_wrapper_set_input_left(bool state);
 void ui_wrapper_set_input_right(bool state);
 void ui_wrapper_set_input_ok(bool state);
-void fireplace_flap_set_pwm(uint16_t pwm_value);
-void ventilation_flap_set_pwm(uint16_t pwm_value);
+void fireplace_flap_set_open_pin(uint8_t state);
+void fireplace_flap_set_close_pin(uint8_t state);
+void ventilation_flap_set_open_pin(uint8_t state);
+void ventilation_flap_set_close_pin(uint8_t state);
 int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uint16_t length);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
@@ -119,15 +117,12 @@ void fireplace_init(void)
 	// Initialize GUI with partial screen update callback
 	gui_init(gui_update_partial_screen_wrapper);
 
-	// Initialize flap controllers (5 seconds transition time)
-	flap_controller_init(&fireplace_flap, fireplace_flap_set_pwm, 0);
-	flap_controller_init(&ventilation_flap, ventilation_flap_set_pwm, 0);
+	// Initialize flap controllers
+	flap_controller_init(&fireplace_flap, fireplace_flap_set_open_pin, fireplace_flap_set_close_pin, FLAP_DEFAULT_OPEN_TRAVEL_TIME_MS, FLAP_DEFAULT_CLOSE_TRAVEL_TIME_MS);
+	flap_controller_init(&ventilation_flap, ventilation_flap_set_open_pin, ventilation_flap_set_close_pin, FLAP_DEFAULT_OPEN_TRAVEL_TIME_MS, FLAP_DEFAULT_CLOSE_TRAVEL_TIME_MS);
 
 	// Initialize ventilation schedule
 	daily_schedule_init(&ventilation_daily_schedule, &ventilation_schedule_config);
-
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
 }
 
 void fireplace_main(void)
@@ -150,30 +145,6 @@ void fireplace_main(void)
 	flap_controller_main(&fireplace_flap);
 	flap_controller_main(&ventilation_flap);
 
-	// Test code: Cycle flap position from 0% to 100% in 10% steps every 3 seconds
-	uint32_t current_time = HAL_GetTick();
-	if (current_time - last_flap_change_time >= 5000)  // 3 seconds
-	{
-		last_flap_change_time = current_time;
-
-		// Set both flaps to current test position
-		flap_controller_set_position(&fireplace_flap, test_flap_position);
-		flap_controller_set_position(&ventilation_flap, test_flap_position);
-
-		// Increment position by 10%
-		test_flap_position += 10;
-
-		// Reset to 0% after reaching 100%
-		if (test_flap_position > 100)
-		{
-			test_flap_position = 0;
-		}
-	}
-
-	// if (HAL_GetTick() % 100 == 0)
-	// {
-	// 	hd44780_write_buffer(&display,gui_get_screen_buffer());
-	// }
 
 	current_temperature = max6675_get_temperature(&thermocouple);
 }
@@ -442,14 +413,24 @@ void ui_wrapper_set_input_ok(bool state)
 	ui_set_input_ok(&ui, state);
 }
 
-void fireplace_flap_set_pwm(uint16_t pwm_value)
+void fireplace_flap_set_open_pin(uint8_t state)
 {
-	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, pwm_value);
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5,  state ? GPIO_PIN_SET : GPIO_PIN_RESET );
 }
 
-void ventilation_flap_set_pwm(uint16_t pwm_value)
+void fireplace_flap_set_close_pin(uint8_t state)
 {
-	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pwm_value);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10,  state ? GPIO_PIN_SET : GPIO_PIN_RESET );
+}
+
+void ventilation_flap_set_open_pin(uint8_t state)
+{
+	// HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7,   state ? GPIO_PIN_SET : GPIO_PIN_RESET );
+}
+
+void ventilation_flap_set_close_pin(uint8_t state)
+{
+	// HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6,  state ? GPIO_PIN_SET : GPIO_PIN_RESET );
 }
 
 int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uint16_t length)
