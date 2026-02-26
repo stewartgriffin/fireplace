@@ -31,12 +31,18 @@ This is an intelligent controller for a fireplace and house ventilation system. 
 | MAX6675 | SPI | Thermocouple temperature sensor for fireplace |
 | HD44780 LCD | I2C (via PCF8574) | Display for status and temperature readings |
 | DS3231 | I2C | Real-time clock for scheduling |
-| Servo Motors (2x) | PWM | Actuators for fireplace and house air flaps |
+| Flap Actuators (2x) | GPIO (2 pins each) | Actuators for fireplace and house air flaps |
 
 ### Communication Protocols
 - **I2C**: HD44780 LCD display (via PCF8574 I2C expander), DS3231 RTC
 - **SPI**: MAX6675 thermocouple interface
-- **PWM**: Servo motor control for both flaps
+- **GPIO**: Flap actuator control (open pin + close pin per flap)
+
+### Flap GPIO Pin Assignments
+| Flap | Open Pin | Close Pin |
+|------|----------|-----------|
+| Ventilation flap | PB7 | PB6 |
+| Fireplace flap | PC5 | PA10 |
 
 ## Development Environment
 
@@ -55,7 +61,7 @@ Components/
 ├── max6675/          # MAX6675 thermocouple driver
 ├── pcf8574/          # PCF8574 I2C GPIO expander driver
 ├── ui/               # UI module with button handling and callbacks
-├── flap_controller/  # Servo-based flap position controller
+├── flap_controller/  # Dual-GPIO flap controller (open/close pins, timed actuation)
 ├── daily_schedule/   # Time-based scheduling with duty cycle control
 ├── logic/            # Main application logic (fireplace.c)
 Core/
@@ -80,14 +86,17 @@ fireplace.ioc         # STM32CubeMX project configuration
 - ✅ UI module with button handling (up, down, left, right)
 - ✅ Callback-based event system for button presses
 - ✅ Real-time temperature reading from MAX6675
-- ✅ PWM servo control for flap actuation (50Hz, 0.9ms-1.6ms pulse width)
-- ✅ Flap controller with smooth transitions and fixed-point arithmetic
+- ✅ Dual-GPIO flap controller with timed open/close actuation
+  - Separate configurable travel times for open and close directions
+  - End-stop protection: targets 0% and 100% use `TRAVEL_TIME_MAX_MS` (5000ms) to absorb accumulated timing error
+  - Mid-motion direction change: stops motor, recalculates position from elapsed time, starts new motion
+  - Simultaneous-pin safety: always deactivates both pins before asserting either direction
 - ✅ Daily schedule module with 30-minute duty cycle control
 - ✅ Doxygen documentation for all driver modules
 
 ### In Development
 - Fireplace temperature monitoring logic and control algorithms
-- Integration of daily schedule with ventilation flap control
+- Integration of daily schedule with ventilation flap control (ventilation flap currently held fully open)
 - Final integration of all components into cohesive control system
 
 ### Planned Features
@@ -139,7 +148,15 @@ fireplace.ioc         # STM32CubeMX project configuration
 
 ## Development Notes
 
-### Recent Progress (2025-12-23)
+### Recent Progress (2026-02-26)
+- ✅ Flap actuators replaced: PWM servo → dual-GPIO (open pin + close pin)
+- ✅ Flap controller rewritten with state machine (IDLE / OPENING / CLOSING)
+- ✅ Separate open and close travel times supported per flap instance
+- ✅ End-stop protection via `TRAVEL_TIME_MAX_MS` for 0% and 100% targets
+- ✅ Ventilation flap GPIO pins commented out pending hardware verification
+- ✅ Ventilation flap set to fully open (100%) on startup
+
+### Previous Progress (2025-12-23)
 - ✅ UI module completed with callback-based button handling
 - ✅ GUI focus system implemented with field blinking for time editing
 - ✅ MAX6675 interrupt-driven SPI communication fully operational
@@ -150,7 +167,7 @@ fireplace.ioc         # STM32CubeMX project configuration
 ### Key Considerations
 - Real-time operation with FreeRTOS task management
 - Reliable temperature sensing for safety
-- Servo position control for precise flap operation
+- Timed GPIO control for flap actuation with end-stop error correction
 - Scheduled operations using DS3231 RTC
 - Future-proof design for air quality sensor integration
 
@@ -195,4 +212,4 @@ The GUI blink system uses a backup/restore pattern to handle continuous data upd
 
 ---
 
-**Last Updated**: 2025-12-23
+**Last Updated**: 2026-02-26
