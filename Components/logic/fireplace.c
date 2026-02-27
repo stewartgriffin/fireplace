@@ -25,6 +25,7 @@
 #include "gui.h"
 #include "flap_controller.h"
 #include "daily_schedule.h"
+#include "combustion_controller.h"
 
 /**************************************           DEFINES                    ******************************************/
 
@@ -47,7 +48,6 @@ static const daily_schedule_config_t ventilation_schedule_config = {
 
 /**************************************           LOCAL VARIABLES            ******************************************/
 max6675_data_t thermocouple;
-int current_temperature = 0;
 
 ds3231_data_t clock;
 pcf8574_data_t gpio_expander;
@@ -59,11 +59,6 @@ flap_controller_data_t fireplace_flap;
 flap_controller_data_t ventilation_flap;
 
 daily_schedule_data_t ventilation_daily_schedule;
-
-// Test variables: cycle fireplace flap 0->100->0% in 10% steps every 6s
-static uint8_t  test_fireplace_position  = 0;
-static int8_t   test_fireplace_direction = 1;   // +1 = opening, -1 = closing
-static uint32_t test_fireplace_last_tick = 0;
 
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size);
@@ -95,10 +90,13 @@ void fireplace_flap_set_close_pin(uint8_t state);
 void ventilation_flap_set_open_pin(uint8_t state);
 void ventilation_flap_set_close_pin(uint8_t state);
 int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uint16_t length);
+void commbustion_main(void);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 void fireplace_init(void)
-{
+{	combustion_controller_init();
+
+	
 	max6675_init(&thermocouple, thermocouple_spi_send_receive_wrapper);
 	ds3231_init(&clock, clock_i2c_receive, clock_i2c_send);
 	pcf8574_init(&gpio_expander, gpio_expander_i2c_send, gpio_expander_write_complete_callback);
@@ -122,8 +120,9 @@ void fireplace_init(void)
 	gui_init(gui_update_partial_screen_wrapper);
 
 	// Initialize flap controllers
-	flap_controller_init(&fireplace_flap, fireplace_flap_set_open_pin, fireplace_flap_set_close_pin, FLAP_DEFAULT_OPEN_TRAVEL_TIME_MS, FLAP_DEFAULT_CLOSE_TRAVEL_TIME_MS);
-	flap_controller_init(&ventilation_flap, ventilation_flap_set_open_pin, ventilation_flap_set_close_pin, FLAP_DEFAULT_OPEN_TRAVEL_TIME_MS, FLAP_DEFAULT_CLOSE_TRAVEL_TIME_MS);
+	// flap_controller_init(&fireplace_flap, fireplace_flap_set_open_pin, fireplace_flap_set_close_pin, 4500U, 6000U);
+		flap_controller_init(&fireplace_flap, fireplace_flap_set_open_pin, fireplace_flap_set_close_pin, 3600, 4100U);
+	flap_controller_init(&ventilation_flap, ventilation_flap_set_open_pin, ventilation_flap_set_close_pin, 3600, 4100);
 
 	// Initialize ventilation schedule
 	daily_schedule_init(&ventilation_daily_schedule, &ventilation_schedule_config);
@@ -149,26 +148,16 @@ void fireplace_main(void)
 	flap_controller_main(&fireplace_flap);
 	flap_controller_main(&ventilation_flap);
 
-	// // Test: cycle fireplace flap 0->100->0% in 10% steps every 7s
-	// uint32_t now = HAL_GetTick();
-	// if (now - test_fireplace_last_tick >= 7000U)
-	// {
-	// 	test_fireplace_last_tick = now;
-	// 	flap_controller_set_position(&fireplace_flap, test_fireplace_position);
+	commbustion_main();
 
-	// 	test_fireplace_position += test_fireplace_direction * 10;
-	// 	if (test_fireplace_position >= 100)
-	// 	{
-	// 		test_fireplace_position  = 100;
-	// 		test_fireplace_direction = -1;
-	// 	}
-	// 	else if (test_fireplace_position == 0 && test_fireplace_direction == -1)
-	// 	{
-	// 		test_fireplace_direction = 1;
-	// 	}
-	// }
-
-	current_temperature = max6675_get_temperature(&thermocouple);
+	if (daily_schedule_get_enable(&ventilation_daily_schedule))
+	{
+		flap_controller_set_position(&ventilation_flap, 40);
+	}
+	else
+	{
+		flap_controller_set_position(&ventilation_flap, 0);
+	}
 }
 
 void clock_i2c_interrupt(void)
@@ -447,12 +436,12 @@ void fireplace_flap_set_close_pin(uint8_t state)
 
 void ventilation_flap_set_open_pin(uint8_t state)
 {
-	// HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7,   state ? GPIO_PIN_SET : GPIO_PIN_RESET );
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7,   state ? GPIO_PIN_SET : GPIO_PIN_RESET );
 }
 
 void ventilation_flap_set_close_pin(uint8_t state)
 {
-	// HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6,  state ? GPIO_PIN_SET : GPIO_PIN_RESET );
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6,  state ? GPIO_PIN_SET : GPIO_PIN_RESET );
 }
 
 int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uint16_t length)
@@ -460,4 +449,34 @@ int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uin
 	// Wrapper for hd44780_write_buffer_at_position
 	// Returns 0 on success, -1 if display is busy
 	return hd44780_write_buffer_at_position(&display, buffer, position, length);
+}
+
+void commbustion_main(void)
+{	
+	combustion_controller_main();
+	combustion_controller_set_exhaust_temperature(max6675_get_temperature(&thermocouple));
+
+	uint8_t fireplac_flap_position = 0;
+	switch(combustion_controller_get_state())
+	{
+		case COMBUSTION_STATE_OFF:
+			fireplac_flap_position = 0;
+			break;
+		case COMBUSTION_STATE_STARTUP:
+			fireplac_flap_position = 100;
+			break;
+		case COMBUSTION_STATE_WORKING:
+			fireplac_flap_position = 100;
+			break;
+		case COMBUSTION_STATE_PROTECTION:
+			fireplac_flap_position = 20;
+			break;
+		case COMBUSTION_STATE_ENDING:
+			fireplac_flap_position = 30;
+			break;
+		case COMBUSTION_STATE_COOL_DOWN:
+			fireplac_flap_position = 0;
+			break;
+	}
+	flap_controller_set_position(&fireplace_flap, fireplac_flap_position);
 }

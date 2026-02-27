@@ -18,6 +18,9 @@
 // calculated travel time, to prevent positional error accumulation over time.
 #define TRAVEL_TIME_MAX_MS 6200U
 
+// Duration of the closing pulse applied at startup to establish a known 0% position.
+#define INIT_CLOSE_DURATION_MS 7000U
+
 /**************************************           DATA TYPES                 ******************************************/
 
 /**************************************           CONSTANTS                  ******************************************/
@@ -42,23 +45,36 @@ void flap_controller_init(flap_controller_data_t *data,
     data->close_travel_time_ms = (close_travel_time_ms > 0) ? close_travel_time_ms : FLAP_DEFAULT_CLOSE_TRAVEL_TIME_MS;
     data->current_position = 0;
     data->target_position = 0;
-    data->state = FLAP_STATE_IDLE;
-    data->motion_start_tick = 0;
-    data->motion_duration_ms = 0;
+    data->state = FLAP_STATE_INIT;
+    data->motion_start_tick = HAL_GetTick();
+    data->motion_duration_ms = INIT_CLOSE_DURATION_MS;
 
-    // Ensure both pins are inactive
+    // Drive close pin for init homing, ensure open pin is inactive
     if (data->set_open_pin != NULL)
     {
         data->set_open_pin(0);
     }
     if (data->set_close_pin != NULL)
     {
-        data->set_close_pin(0);
+        data->set_close_pin(1);
     }
 }
 
 void flap_controller_main(flap_controller_data_t *data)
 {
+    if (data->state == FLAP_STATE_INIT)
+    {
+        uint32_t elapsed_ms = HAL_GetTick() - data->motion_start_tick;
+        if (elapsed_ms >= data->motion_duration_ms)
+        {
+            stop_motion(data);
+            data->current_position = 0;
+            data->target_position = 0;
+            data->state = FLAP_STATE_IDLE;
+        }
+        return;
+    }
+
     if (data->state == FLAP_STATE_IDLE)
     {
         if (data->target_position == data->current_position)
@@ -119,6 +135,11 @@ void flap_controller_main(flap_controller_data_t *data)
 
 void flap_controller_set_position(flap_controller_data_t *data, uint8_t position)
 {
+    if (data->state == FLAP_STATE_INIT)
+    {
+        return;
+    }
+
     if (position > 100U)
     {
         position = 100U;

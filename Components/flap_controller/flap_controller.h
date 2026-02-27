@@ -32,6 +32,7 @@ typedef void (*flap_set_gpio_t)(uint8_t state);
  * @brief Internal state of flap motion
  */
 typedef enum {
+	FLAP_STATE_INIT,	// No motion, unknown position after power up, needs to be set to known position
     FLAP_STATE_IDLE,    // No motion, both pins inactive
     FLAP_STATE_OPENING, // Open pin active, counting elapsed time
     FLAP_STATE_CLOSING  // Close pin active, counting elapsed time
