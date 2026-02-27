@@ -149,24 +149,24 @@ void fireplace_main(void)
 	flap_controller_main(&fireplace_flap);
 	flap_controller_main(&ventilation_flap);
 
-	// Test: cycle fireplace flap 0->100->0% in 10% steps every 7s
-	uint32_t now = HAL_GetTick();
-	if (now - test_fireplace_last_tick >= 7000U)
-	{
-		test_fireplace_last_tick = now;
-		flap_controller_set_position(&fireplace_flap, test_fireplace_position);
+	// // Test: cycle fireplace flap 0->100->0% in 10% steps every 7s
+	// uint32_t now = HAL_GetTick();
+	// if (now - test_fireplace_last_tick >= 7000U)
+	// {
+	// 	test_fireplace_last_tick = now;
+	// 	flap_controller_set_position(&fireplace_flap, test_fireplace_position);
 
-		test_fireplace_position += test_fireplace_direction * 10;
-		if (test_fireplace_position >= 100)
-		{
-			test_fireplace_position  = 100;
-			test_fireplace_direction = -1;
-		}
-		else if (test_fireplace_position == 0 && test_fireplace_direction == -1)
-		{
-			test_fireplace_direction = 1;
-		}
-	}
+	// 	test_fireplace_position += test_fireplace_direction * 10;
+	// 	if (test_fireplace_position >= 100)
+	// 	{
+	// 		test_fireplace_position  = 100;
+	// 		test_fireplace_direction = -1;
+	// 	}
+	// 	else if (test_fireplace_position == 0 && test_fireplace_direction == -1)
+	// 	{
+	// 		test_fireplace_direction = 1;
+	// 	}
+	// }
 
 	current_temperature = max6675_get_temperature(&thermocouple);
 }
