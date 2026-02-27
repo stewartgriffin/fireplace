@@ -55,15 +55,16 @@ This is an intelligent controller for a fireplace and house ventilation system. 
 
 ```
 Components/
-├── ds3231/           # DS3231 RTC driver
-├── gui/              # GUI system with focus and blinking fields
-├── hd44780/          # HD44780 LCD display driver
-├── max6675/          # MAX6675 thermocouple driver
-├── pcf8574/          # PCF8574 I2C GPIO expander driver
-├── ui/               # UI module with button handling and callbacks
-├── flap_controller/  # Dual-GPIO flap controller (open/close pins, timed actuation)
-├── daily_schedule/   # Time-based scheduling with duty cycle control
-├── logic/            # Main application logic (fireplace.c)
+├── ds3231/                  # DS3231 RTC driver
+├── gui/                     # GUI system with focus and blinking fields
+├── hd44780/                 # HD44780 LCD display driver
+├── max6675/                 # MAX6675 thermocouple driver
+├── pcf8574/                 # PCF8574 I2C GPIO expander driver
+├── ui/                      # UI module with button handling and callbacks
+├── flap_controller/         # Dual-GPIO flap controller (open/close pins, timed actuation)
+├── daily_schedule/          # Time-based scheduling with duty cycle control
+├── combustion_controller/   # Fireplace combustion state machine
+├── logic/                   # Main application logic (fireplace.c)
 Core/
 ├── Src/              # STM32 HAL and peripheral initialization
 │   ├── i2c.c        # I2C configuration
@@ -73,7 +74,7 @@ fireplace.ioc         # STM32CubeMX project configuration
 
 ## Current Status
 
-**Development Stage**: Core features working
+**Development Stage**: Core features working — v1 release candidate
 
 ### Completed Features
 - ✅ SPI communication with MAX6675 thermocouple (interrupt-driven)
@@ -83,27 +84,33 @@ fireplace.ioc         # STM32CubeMX project configuration
 - ✅ HD44780 LCD display integration (via PCF8574 I2C expander)
 - ✅ DS3231 RTC integration for timekeeping
 - ✅ GUI system with focus management and field blinking
-- ✅ UI module with button handling (up, down, left, right)
+- ✅ UI module with button handling (up, down, left, right, ok)
 - ✅ Callback-based event system for button presses
 - ✅ Real-time temperature reading from MAX6675
 - ✅ Dual-GPIO flap controller with timed open/close actuation
   - Separate configurable travel times for open and close directions
-  - End-stop protection: targets 0% and 100% use `TRAVEL_TIME_MAX_MS` (5000ms) to absorb accumulated timing error
+  - Power-up homing: drives flap closed for 7 seconds to establish known position before accepting commands
+  - End-stop protection: targets 0% and 100% use `TRAVEL_TIME_MAX_MS` (6200ms) to absorb accumulated timing error
   - Mid-motion direction change: stops motor, recalculates position from elapsed time, starts new motion
   - Simultaneous-pin safety: always deactivates both pins before asserting either direction
 - ✅ Daily schedule module with 30-minute duty cycle control
 - ✅ Doxygen documentation for all driver modules
-
-### In Development
-- Fireplace temperature monitoring logic and control algorithms
-- Integration of daily schedule with ventilation flap control (ventilation flap currently held fully open)
-- Final integration of all components into cohesive control system
+- ✅ Combustion controller — six-stage fireplace state machine
+  - States: OFF → STARTUP → WORKING → ENDING → COOL_DOWN, plus PROTECTION
+  - Fireplace flap position driven automatically per state (0% off, 100% startup/working, 30% ending, 0% cool-down, 20% protection)
+  - Overtemperature protection: enters PROTECTION above 400°C, exits below 350°C
+  - Manual startup request: 30-minute grace period locks state in STARTUP regardless of temperature
+  - Manual end request: 90-minute delay then forces ENDING; locks ENDING against back-transition to WORKING
+  - Startup and end requests are mutually cancelling — last request wins
+  - All flag processing happens before state logic, so requests during PROTECTION are honoured
+- ✅ Ventilation schedule integrated: duty-cycle-based open/close driven by time of day
+  - Schedule: 10% midnight, 3% at 05:00, 0% at 15:00, 10% at 22:00
 
 ### Planned Features
 - Air quality sensor integration (PM2.5, CO2, or VOC sensors)
 - Intelligent scheduling based on air quality measurements
-- Advanced control algorithms for flap management
 - Enhanced user interface features (menus, settings)
+- Data logging and temperature history
 
 ## User Interface System
 
@@ -136,25 +143,34 @@ fireplace.ioc         # STM32CubeMX project configuration
 - No over-engineering - focus on reliability
 
 ### Control Logic Philosophy
-- **Fireplace Flap**: Temperature-based control
-  - Open when fire detected (high temperature)
-  - Close when fire is out
-  - Prevent unnecessary heat loss
+- **Fireplace Flap**: Combustion-state-based control driven by `combustion_controller`
+  - Flap position is a function of the current combustion state, not raw temperature
+  - Overtemperature (PROTECTION) reduces flap to 20% to limit airflow without fully starving the fire
 
-- **House Ventilation Flap**: Time + Quality based control
+- **House Ventilation Flap**: Time + duty-cycle based control
   - Scheduled opening during statistically optimal air quality times
   - Override based on air quality sensor readings (when implemented)
   - Safety and efficiency balanced approach
 
 ## Development Notes
 
-### Recent Progress (2026-02-26)
+### Recent Progress (2026-02-27)
+- ✅ Combustion controller added (`Components/combustion_controller/`)
+  - Six-stage state machine with temperature thresholds and hysteresis
+  - Startup grace period (30 min) and end delay (90 min) with HAL tick timers
+  - Mutual cancellation of startup/end requests; flags processed before state logic
+  - Overtemperature PROTECTION state with global entry check from any state
+  - `end_tick` and `end_requested` cleared on COOL_DOWN entry to allow future restarts
+- ✅ Flap controller: power-up homing sequence added (FLAP_STATE_INIT, 7 seconds closing)
+- ✅ Ventilation schedule integrated into main loop with duty-cycle-based flap control
+- ✅ Fireplace flap position now driven by combustion state (not raw temperature)
+
+### Previous Progress (2026-02-26)
 - ✅ Flap actuators replaced: PWM servo → dual-GPIO (open pin + close pin)
 - ✅ Flap controller rewritten with state machine (IDLE / OPENING / CLOSING)
 - ✅ Separate open and close travel times supported per flap instance
 - ✅ End-stop protection via `TRAVEL_TIME_MAX_MS` for 0% and 100% targets
-- ✅ Ventilation flap GPIO pins commented out pending hardware verification
-- ✅ Ventilation flap set to fully open (100%) on startup
+- ✅ Ventilation flap GPIO pins active on PB7/PB6
 
 ### Previous Progress (2025-12-23)
 - ✅ UI module completed with callback-based button handling
@@ -212,4 +228,4 @@ The GUI blink system uses a backup/restore pattern to handle continuous data upd
 
 ---
 
-**Last Updated**: 2026-02-26
+**Last Updated**: 2026-02-27
