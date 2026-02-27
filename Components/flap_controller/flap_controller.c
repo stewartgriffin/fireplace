@@ -16,7 +16,7 @@
 
 // When targeting an end stop (0% or 100%), run for this fixed duration regardless of
 // calculated travel time, to prevent positional error accumulation over time.
-#define TRAVEL_TIME_MAX_MS 5000U
+#define TRAVEL_TIME_MAX_MS 6200U
 
 /**************************************           DATA TYPES                 ******************************************/
 

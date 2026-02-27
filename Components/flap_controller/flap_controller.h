@@ -70,8 +70,8 @@ typedef struct {
 /**************************************           DEFINES                    ******************************************/
 
 /** Default travel times if not specified */
-#define FLAP_DEFAULT_OPEN_TRAVEL_TIME_MS  3000U
-#define FLAP_DEFAULT_CLOSE_TRAVEL_TIME_MS 3000U
+#define FLAP_DEFAULT_OPEN_TRAVEL_TIME_MS  5800U
+#define FLAP_DEFAULT_CLOSE_TRAVEL_TIME_MS 5800U
 
 /**************************************    GLOBAL FUNCTION DECLARATIONS      ******************************************/
 

@@ -60,6 +60,10 @@ flap_controller_data_t ventilation_flap;
 
 daily_schedule_data_t ventilation_daily_schedule;
 
+// Test variables: cycle fireplace flap 0->100->0% in 10% steps every 6s
+static uint8_t  test_fireplace_position  = 0;
+static int8_t   test_fireplace_direction = 1;   // +1 = opening, -1 = closing
+static uint32_t test_fireplace_last_tick = 0;
 
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size);
@@ -145,6 +149,24 @@ void fireplace_main(void)
 	flap_controller_main(&fireplace_flap);
 	flap_controller_main(&ventilation_flap);
 
+	// Test: cycle fireplace flap 0->100->0% in 10% steps every 7s
+	uint32_t now = HAL_GetTick();
+	if (now - test_fireplace_last_tick >= 7000U)
+	{
+		test_fireplace_last_tick = now;
+		flap_controller_set_position(&fireplace_flap, test_fireplace_position);
+
+		test_fireplace_position += test_fireplace_direction * 10;
+		if (test_fireplace_position >= 100)
+		{
+			test_fireplace_position  = 100;
+			test_fireplace_direction = -1;
+		}
+		else if (test_fireplace_position == 0 && test_fireplace_direction == -1)
+		{
+			test_fireplace_direction = 1;
+		}
+	}
 
 	current_temperature = max6675_get_temperature(&thermocouple);
 }
