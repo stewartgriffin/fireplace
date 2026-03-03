@@ -13,7 +13,7 @@
 #include "stm32h5xx_hal.h"
 
 /**************************************           DEFINES                    ******************************************/
-#define STARTUP_ENTER_THRESHOLD_TEMP 38
+#define STARTUP_ENTER_THRESHOLD_TEMP 37
 #define WORKING_ENTER_THRESHOLD_TEMP 80
 #define ENDING_ENTER_THRESHOLD_TEMP 70
 #define COOL_DOWN_ENTER_THRESHOLD_TEMP 50
@@ -100,6 +100,7 @@ void combustion_controller_main(void)
     {
         if (temperature > STARTUP_ENTER_THRESHOLD_TEMP)
         {
+            startup_tick = HAL_GetTick();
             state = COMBUSTION_STATE_STARTUP;
         }
     }

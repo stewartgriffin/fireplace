@@ -24,13 +24,14 @@ extern "C" {
 /**************************************           DATA TYPES                 ******************************************/
 
 /**
- * @brief Single schedule entry with time and value
+ * @brief Single schedule entry with time, duty cycle, and level
  * Defines when a particular setting should be applied during the day
  */
 typedef struct {
 	uint8_t hour;        // Hour (0-23)
 	uint8_t minute;      // Minute (0-59)
-	uint8_t value;       // Value to apply (0-100%)
+	uint8_t duty_cycle;  // Duty cycle percentage (0-100%) — controls how often enable is active
+	uint8_t level;       // Output level associated with this period (application-defined)
 } daily_schedule_entry_t;
 
 /**
@@ -38,10 +39,10 @@ typedef struct {
  * Example usage in fireplace.c:
  *
  * static const daily_schedule_entry_t my_schedule[] = {
- *     {0, 0, 0},      // Midnight: 0%
- *     {6, 0, 50},     // 6:00 AM: 50%
- *     {8, 0, 100},    // 8:00 AM: 100%
- *     {22, 0, 0},     // 10:00 PM: 0%
+ *     {0, 0, 0, 0},      // Midnight: 0% duty cycle, level 0
+ *     {6, 0, 50, 1},     // 6:00 AM: 50% duty cycle, level 1
+ *     {8, 0, 100, 2},    // 8:00 AM: 100% duty cycle, level 2
+ *     {22, 0, 0, 0},     // 10:00 PM: 0% duty cycle, level 0
  * };
  *
  * static const daily_schedule_config_t my_config = {
@@ -55,6 +56,14 @@ typedef struct {
 } daily_schedule_config_t;
 
 /**
+ * @brief Result returned by daily_schedule_get()
+ */
+typedef struct {
+	bool enable;      // true during the active portion of the duty cycle
+	uint8_t level;    // Level from the currently active schedule entry
+} daily_schedule_result_t;
+
+/**
  * @brief Daily schedule runtime data structure
  */
 typedef struct {
@@ -62,8 +71,9 @@ typedef struct {
 	const daily_schedule_config_t *config;
 
 	// Runtime state
-	uint8_t current_value;    // Current scheduled value (0-100%)
-	bool current_enable;      // Current enable state based on duty cycle
+	uint8_t current_duty_cycle;  // Duty cycle % of the active entry (0-100%)
+	uint8_t current_level;       // Level of the active entry
+	bool current_enable;         // Enable state based on duty cycle
 	uint32_t last_update_tick;
 } daily_schedule_data_t;
 
@@ -81,27 +91,20 @@ void daily_schedule_init(daily_schedule_data_t *data,
 
 /**
  * @brief Main function - call periodically to update schedule
- * Updates both the current value and enable state based on time and duty cycle
+ * Updates both the enable state and level based on time and duty cycle
  * @param data Pointer to daily schedule data structure
  * @param current_time Current time from DS3231
  */
 void daily_schedule_main(daily_schedule_data_t *data, time_data_t current_time);
 
 /**
- * @brief Get current scheduled value
+ * @brief Get current schedule result
+ * Returns the enable state (from duty cycle) and level of the active schedule entry.
+ * For example with 10% duty cycle over a 20-minute period: enable is true for 2 minutes out of every 20 minutes.
  * @param data Pointer to daily schedule data structure
- * @return Current scheduled value (0-100%)
+ * @return Struct containing enable (bool) and level (uint8_t)
  */
-uint8_t daily_schedule_get_value(daily_schedule_data_t *data);
-
-/**
- * @brief Get schedule enable state based on 30-minute duty cycle
- * The percentage value controls a 30-minute duty cycle pattern.
- * For example, 10% means this returns true for 3 minutes out of every 30 minutes.
- * @param data Pointer to daily schedule data structure
- * @return true during the active portion of the duty cycle, false otherwise
- */
-bool daily_schedule_get_enable(daily_schedule_data_t *data);
+daily_schedule_result_t daily_schedule_get(daily_schedule_data_t *data);
 
 /* CPP GUARD END */
 #ifdef __cplusplus

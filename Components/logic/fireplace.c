@@ -26,6 +26,8 @@
 #include "flap_controller.h"
 #include "daily_schedule.h"
 #include "combustion_controller.h"
+#include "ds18b20.h"
+#include "usart.h"
 
 /**************************************           DEFINES                    ******************************************/
 
@@ -35,10 +37,11 @@
 
 // Ventilation schedule configuration
 static const daily_schedule_entry_t ventilation_schedule[] = {
-	{0, 0, 10},    // Midnight: 10%
-	{5, 0, 3},     // 5:00 AM: 3%
-	{15, 0, 0},    // 3:00 PM: 0%
-	{22, 0, 10}    // 10:00 PM: 10%
+	{0,  0, 5, 40},
+	{4,  0, 0, 0},
+	{8,  0,  20, 50},
+	{15, 0,  5, 50}, 
+	{22, 0, 5, 100}
 };
 
 static const daily_schedule_config_t ventilation_schedule_config = {
@@ -59,6 +62,8 @@ flap_controller_data_t fireplace_flap;
 flap_controller_data_t ventilation_flap;
 
 daily_schedule_data_t ventilation_daily_schedule;
+
+ds18b20_data_t ds18b20_sensor;
 
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size);
@@ -91,6 +96,9 @@ void ventilation_flap_set_open_pin(uint8_t state);
 void ventilation_flap_set_close_pin(uint8_t state);
 int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uint16_t length);
 void commbustion_main(void);
+int ds18b20_uart_transmit_receive_wrapper(uint8_t *tx, uint8_t *rx, uint16_t size);
+void ds18b20_uart_set_baudrate_wrapper(uint32_t baudrate);
+void ds18b20_uart_interrupt(void);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 void fireplace_init(void)
@@ -126,6 +134,9 @@ void fireplace_init(void)
 
 	// Initialize ventilation schedule
 	daily_schedule_init(&ventilation_daily_schedule, &ventilation_schedule_config);
+
+	// Initialize DS18B20 temperature sensor on USART6 (single-wire half-duplex)
+	ds18b20_init(&ds18b20_sensor, ds18b20_uart_transmit_receive_wrapper, ds18b20_uart_set_baudrate_wrapper);
 }
 
 void fireplace_main(void)
@@ -133,6 +144,7 @@ void fireplace_main(void)
 	// All components now manage their own timing using HAL_GetTick()
 	// Just call them as fast as possible - they will handle their own intervals
 	max6675_main(&thermocouple);
+	ds18b20_main(&ds18b20_sensor);
 	ds3231_main(&clock);
 	pcf8574_main(&gpio_expander);
 	hd44780_main(&display);
@@ -150,9 +162,10 @@ void fireplace_main(void)
 
 	commbustion_main();
 
-	if (daily_schedule_get_enable(&ventilation_daily_schedule))
+	daily_schedule_result_t ventilation = daily_schedule_get(&ventilation_daily_schedule);
+	if (ventilation.enable)
 	{
-		flap_controller_set_position(&ventilation_flap, 40);
+		flap_controller_set_position(&ventilation_flap, ventilation.level);
 	}
 	else
 	{
@@ -451,32 +464,83 @@ int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uin
 	return hd44780_write_buffer_at_position(&display, buffer, position, length);
 }
 
+// DS18B20 UART wrapper state: tracks whether we are waiting for the RX phase
+// 1-Wire over UART half-duplex: TX and RX must happen simultaneously because
+// the DS18B20 presence/data pulses occur during byte transmission, not after.
+// We enable both TE and RE (HDSEL internal loopback connects TX pin to RX),
+// start Receive_IT before Transmit_IT so the RX FIFO captures the bus state
+// (transmitted byte modified by DS18B20 pulling the line low) in real time.
+// TxCpltCallback is the trigger for advancing the DS18B20 state machine.
+
+int ds18b20_uart_transmit_receive_wrapper(uint8_t *tx, uint8_t *rx, uint16_t size)
+{
+	// Flush any stale byte left in RDR (e.g. after an aborted transfer) to
+	// prevent it from being read as the first byte of this new reception and
+	// to prevent it from causing an immediate overrun error (ORE) once RXNEIE
+	// is enabled by Receive_IT below.
+	if (__HAL_UART_GET_FLAG(&huart6, UART_FLAG_RXNE))
+	{
+		(void)huart6.Instance->RDR;
+	}
+	SET_BIT(huart6.Instance->CR1, USART_CR1_RE | USART_CR1_TE);
+	HAL_UART_Receive_IT(&huart6, rx, size);
+	return (int)HAL_UART_Transmit_IT(&huart6, tx, size);
+}
+
+void ds18b20_uart_set_baudrate_wrapper(uint32_t baudrate)
+{
+	// Direct BRR write — safe to call from ISR context.
+	// HAL_HalfDuplex_Init resets gState/RxState and calls UART_SetConfig, which
+	// is excessive and fragile inside an ISR.  BRR can only be written while UE=0,
+	// so we toggle UE briefly; all other CR1/CR2/CR3 settings are preserved.
+	CLEAR_BIT(huart6.Instance->CR1, USART_CR1_UE);
+	huart6.Instance->BRR = UART_DIV_SAMPLING16(HAL_RCC_GetPCLK1Freq(), baudrate, UART_PRESCALER_DIV1);
+	SET_BIT(huart6.Instance->CR1, USART_CR1_UE);
+	huart6.Init.BaudRate = baudrate;
+}
+
+void ds18b20_uart_interrupt(void)
+{
+	ds18b20_interrupt(&ds18b20_sensor);
+}
+
+// Called from HAL_UART_ErrorCallback when a blocking UART error (typically ORE)
+// aborts an ongoing Receive_IT.  The DS18B20 state machine is stuck in whatever
+// state it was in — reset it to IDLE so the next ds18b20_main() call can
+// start a fresh read cycle instead of hanging permanently.
+void ds18b20_uart_error(void)
+{
+	ds18b20_sensor.state = DS18B20_STATE_IDLE;
+	ds18b20_sensor.last_read_tick = HAL_GetTick();
+}
+
 void commbustion_main(void)
 {	
-	combustion_controller_main();
-	combustion_controller_set_exhaust_temperature(max6675_get_temperature(&thermocouple));
+	// combustion_controller_main();
+	// combustion_controller_set_exhaust_temperature(max6675_get_temperature(&thermocouple));
 
-	uint8_t fireplac_flap_position = 0;
-	switch(combustion_controller_get_state())
-	{
-		case COMBUSTION_STATE_OFF:
-			fireplac_flap_position = 0;
-			break;
-		case COMBUSTION_STATE_STARTUP:
-			fireplac_flap_position = 100;
-			break;
-		case COMBUSTION_STATE_WORKING:
-			fireplac_flap_position = 100;
-			break;
-		case COMBUSTION_STATE_PROTECTION:
-			fireplac_flap_position = 20;
-			break;
-		case COMBUSTION_STATE_ENDING:
-			fireplac_flap_position = 30;
-			break;
-		case COMBUSTION_STATE_COOL_DOWN:
-			fireplac_flap_position = 0;
-			break;
-	}
-	flap_controller_set_position(&fireplace_flap, fireplac_flap_position);
+	// uint8_t fireplac_flap_position = 0;
+	// switch(combustion_controller_get_state())
+	// {
+	// 	case COMBUSTION_STATE_OFF:
+	// 		fireplac_flap_position = 0;
+	// 		break;
+	// 	case COMBUSTION_STATE_STARTUP:
+	// 		fireplac_flap_position = 100;
+	// 		break;
+	// 	case COMBUSTION_STATE_WORKING:
+	// 		fireplac_flap_position = 100;
+	// 		break;
+	// 	case COMBUSTION_STATE_PROTECTION:
+	// 		fireplac_flap_position = 20;
+	// 		break;
+	// 	case COMBUSTION_STATE_ENDING:
+	// 		fireplac_flap_position = 30;
+	// 		break;
+	// 	case COMBUSTION_STATE_COOL_DOWN:
+	// 		fireplac_flap_position = 0;
+	// 		break;
+	// }
+	// flap_controller_set_position(&fireplace_flap, fireplac_flap_position);
+	flap_controller_set_position(&fireplace_flap, 100);
 }

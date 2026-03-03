@@ -14,7 +14,7 @@
 
 /**************************************           DEFINES                    ******************************************/
 #define UPDATE_INTERVAL_MS 1000  // Update every 1 second
-#define DUTY_CYCLE_PERIOD_MINUTES 30  // 30-minute duty cycle period
+#define DUTY_CYCLE_PERIOD_MINUTES 20  // 20-minute duty cycle period
 
 /**************************************           DATA TYPES                 ******************************************/
 
@@ -23,8 +23,8 @@
 /**************************************           LOCAL VARIABLES            ******************************************/
 
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
-static uint8_t find_current_value(const daily_schedule_config_t *config, uint8_t hour, uint8_t minute);
-static bool calculate_enable_state(const daily_schedule_config_t *config, uint8_t percentage, uint8_t hour, uint8_t minute);
+static const daily_schedule_entry_t *find_current_entry(const daily_schedule_config_t *config, uint8_t hour, uint8_t minute);
+static bool calculate_enable_state(const daily_schedule_config_t *config, uint8_t duty_cycle, uint8_t hour, uint8_t minute);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 
@@ -32,7 +32,8 @@ void daily_schedule_init(daily_schedule_data_t *data,
 						 const daily_schedule_config_t *config)
 {
 	data->config = config;
-	data->current_value = 0;
+	data->current_duty_cycle = 0;
+	data->current_level = 0;
 	data->current_enable = false;
 	data->last_update_tick = HAL_GetTick();
 }
@@ -56,39 +57,48 @@ void daily_schedule_main(daily_schedule_data_t *data, time_data_t current_time)
 		return;
 	}
 
-	// Find and update current value based on schedule
-	data->current_value = find_current_value(data->config, current_time.hour, current_time.minute);
+	// Find the active entry and extract duty cycle and level
+	const daily_schedule_entry_t *entry = find_current_entry(data->config, current_time.hour, current_time.minute);
+	if (entry != NULL)
+	{
+		data->current_duty_cycle = entry->duty_cycle;
+		data->current_level = entry->level;
+	}
+	else
+	{
+		data->current_duty_cycle = 0;
+		data->current_level = 0;
+	}
 
 	// Calculate enable state based on duty cycle
-	data->current_enable = calculate_enable_state(data->config, data->current_value, current_time.hour, current_time.minute);
+	data->current_enable = calculate_enable_state(data->config, data->current_duty_cycle, current_time.hour, current_time.minute);
 }
 
-uint8_t daily_schedule_get_value(daily_schedule_data_t *data)
+daily_schedule_result_t daily_schedule_get(daily_schedule_data_t *data)
 {
-	return data->current_value;
-}
-
-bool daily_schedule_get_enable(daily_schedule_data_t *data)
-{
-	return data->current_enable;
+	daily_schedule_result_t result;
+	result.enable = data->current_enable;
+	result.level = data->current_level;
+	return result;
 }
 
 /**************************************      LOCAL FUNCTION DEFINITIONS      ******************************************/
 
 /**
- * @brief Find the current scheduled value based on time
+ * @brief Find the active schedule entry based on current time
+ * Returns the most recent entry whose time has passed, or NULL if none found.
  * @param config Pointer to schedule configuration
  * @param hour Current hour (0-23)
  * @param minute Current minute (0-59)
- * @return Scheduled value (0-100%)
+ * @return Pointer to the active entry, or NULL if no entry has passed yet
  */
-static uint8_t find_current_value(const daily_schedule_config_t *config, uint8_t hour, uint8_t minute)
+static const daily_schedule_entry_t *find_current_entry(const daily_schedule_config_t *config, uint8_t hour, uint8_t minute)
 {
 	// Convert current time to minutes since midnight
 	uint16_t current_minutes = (uint16_t)hour * 60 + minute;
 
 	// Find the most recent entry that has passed
-	uint8_t active_value = 0;
+	const daily_schedule_entry_t *best_entry = NULL;
 	uint16_t best_time = 0;
 
 	for (uint8_t i = 0; i < config->num_entries; i++)
@@ -99,32 +109,32 @@ static uint8_t find_current_value(const daily_schedule_config_t *config, uint8_t
 		if (entry_minutes <= current_minutes && entry_minutes >= best_time)
 		{
 			best_time = entry_minutes;
-			active_value = config->entries[i].value;
+			best_entry = &config->entries[i];
 		}
 	}
 
-	return active_value;
+	return best_entry;
 }
 
 /**
- * @brief Calculate enable state based on 30-minute duty cycle
+ * @brief Calculate enable state based on duty cycle within the period
  * @param config Pointer to schedule configuration (unused, for future extensions)
- * @param percentage Current scheduled percentage (0-100%)
+ * @param duty_cycle Current duty cycle percentage (0-100%)
  * @param hour Current hour (0-23)
  * @param minute Current minute (0-59)
  * @return true during active portion of duty cycle, false otherwise
  */
-static bool calculate_enable_state(const daily_schedule_config_t *config, uint8_t percentage, uint8_t hour, uint8_t minute)
+static bool calculate_enable_state(const daily_schedule_config_t *config, uint8_t duty_cycle, uint8_t hour, uint8_t minute)
 {
-	// Unused parameter
+	// Unused parameters
 	(void)config;
+	(void)hour;
 
-	// Calculate which minute we are within the current 30-minute block (0-29)
+	// Calculate which minute we are within the current period block
 	uint8_t minute_within_block = minute % DUTY_CYCLE_PERIOD_MINUTES;
 
-	// Calculate threshold: how many minutes should be "true" in this 30-minute block
-	// threshold_minutes = (30 * percentage) / 100
-	uint8_t threshold_minutes = (DUTY_CYCLE_PERIOD_MINUTES * percentage) / 100;
+	// Calculate threshold: how many minutes should be "true" in this block
+	uint8_t threshold_minutes = (DUTY_CYCLE_PERIOD_MINUTES * duty_cycle) / 100;
 
 	// Return true if we're within the active portion of the duty cycle
 	return (minute_within_block < threshold_minutes);
