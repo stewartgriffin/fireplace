@@ -17,9 +17,9 @@
 /**************************************           DEFINES                    ******************************************/
 // Screen buffer positions
 #define FIREPLACE_POS       4   // K%: XXX (position for XXX)
-#define TEMP_POS           17   // Kt: XXX (position for XXX)
+#define TEMP_POS           17   // Kom t: XXX (position for XXX)
 #define VENTILATION_POS    24   // W%: XXX (position for XXX)
-#define PPM_POS            37   // Wppm: XXX (position for XXX)
+#define PPM_POS            37   // Zew t: XXX (position for XXX)
 #define TIME_POS           60   // HH:MM:SS (position for HH)
 #define DATE_POS           72   // DD.MM.YY (position for DD)
 
@@ -39,8 +39,8 @@ typedef enum
 
 /**************************************           LOCAL VARIABLES            ******************************************/
 /*
-"K%: XXX        Kt: XXX"
-"W%: XXX      Wppm: XXX"
+"K%: XXX     Kom t: XXX"
+"W%: XXX     Zew t: XXX"
 "                    "
 "22:33:44    12.03.25";
 */
@@ -62,12 +62,12 @@ static uint8_t active_change_buffer = 0;  // Which buffer is currently being fil
 
 char screen_buffer[81] =  // 80 chars + null terminator for safe snprintf
 {
-	// Line 1: "K%:         Kt:    "
-	'K', '%', ':', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-	'K', 't', ':', ' ', ' ', ' ', ' ',
-	// Line 2: "W%:       Wppm:    "
-	'W', '%', ':', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-	'W', 'p', 'p', 'm', ':', ' ', ' ', ' ', ' ',
+	// Line 1: "K%:       Kom t:   "
+	'K', '%', ':', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'K', 'o', 'm',
+	' ', 't', ':', ' ', ' ', ' ', ' ',
+	// Line 2: "W%:       Zew t:   "
+	'W', '%', ':', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'Z',
+	'e', 'w', ' ', 't', ':', ' ', ' ', ' ', ' ',
 	// Line 3: "                    "
 	' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
 	' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
@@ -311,13 +311,13 @@ void gui_set_ventilation(uint8_t value)
 
 void gui_set_ppm(uint8_t value)
 {
-	// Update Wppm: XXX at position PPM_POS (right justified in 3 chars)
+	// Update Zew t: XXX at position PPM_POS (right justified in 3 chars)
 	format_3digit_right_justified(&screen_buffer[PPM_POS], value);
 }
 
 void gui_set_fireplace_temperature(uint8_t value)
 {
-	// Update Kt: XXX at position TEMP_POS (right justified in 3 chars)
+	// Update Kom t: XXX at position TEMP_POS (right justified in 3 chars)
 	format_3digit_right_justified(&screen_buffer[TEMP_POS], value);
 }
 

@@ -63,7 +63,7 @@ flap_controller_data_t ventilation_flap;
 
 daily_schedule_data_t ventilation_daily_schedule;
 
-ds18b20_data_t ds18b20_sensor;
+ds18b20_data_t outside_temperature_sensor;
 
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size);
@@ -96,6 +96,7 @@ void ventilation_flap_set_open_pin(uint8_t state);
 void ventilation_flap_set_close_pin(uint8_t state);
 int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uint16_t length);
 void commbustion_main(void);
+void ventilation_main(void);
 int ds18b20_uart_transmit_receive_wrapper(uint8_t *tx, uint8_t *rx, uint16_t size);
 void ds18b20_uart_set_baudrate_wrapper(uint32_t baudrate);
 void ds18b20_uart_interrupt(void);
@@ -136,7 +137,7 @@ void fireplace_init(void)
 	daily_schedule_init(&ventilation_daily_schedule, &ventilation_schedule_config);
 
 	// Initialize DS18B20 temperature sensor on USART6 (single-wire half-duplex)
-	ds18b20_init(&ds18b20_sensor, ds18b20_uart_transmit_receive_wrapper, ds18b20_uart_set_baudrate_wrapper);
+	ds18b20_init(&outside_temperature_sensor, ds18b20_uart_transmit_receive_wrapper, ds18b20_uart_set_baudrate_wrapper);
 }
 
 void fireplace_main(void)
@@ -144,7 +145,7 @@ void fireplace_main(void)
 	// All components now manage their own timing using HAL_GetTick()
 	// Just call them as fast as possible - they will handle their own intervals
 	max6675_main(&thermocouple);
-	ds18b20_main(&ds18b20_sensor);
+	ds18b20_main(&outside_temperature_sensor);
 	ds3231_main(&clock);
 	pcf8574_main(&gpio_expander);
 	hd44780_main(&display);
@@ -161,16 +162,8 @@ void fireplace_main(void)
 	flap_controller_main(&ventilation_flap);
 
 	commbustion_main();
+	ventilation_main();
 
-	daily_schedule_result_t ventilation = daily_schedule_get(&ventilation_daily_schedule);
-	if (ventilation.enable)
-	{
-		flap_controller_set_position(&ventilation_flap, ventilation.level);
-	}
-	else
-	{
-		flap_controller_set_position(&ventilation_flap, 0);
-	}
 }
 
 void clock_i2c_interrupt(void)
@@ -264,7 +257,7 @@ void fireplace_update_gui(void)
 
 	gui_set_ventilation(flap_controller_get_position(&ventilation_flap));
 
-	gui_set_ppm(20);
+	gui_set_ppm(ds18b20_get_temperature(&outside_temperature_sensor));
 
 	gui_set_fireplace_temperature(max6675_get_temperature(&thermocouple));
 }
@@ -474,10 +467,8 @@ int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uin
 
 int ds18b20_uart_transmit_receive_wrapper(uint8_t *tx, uint8_t *rx, uint16_t size)
 {
-	// Flush any stale byte left in RDR (e.g. after an aborted transfer) to
-	// prevent it from being read as the first byte of this new reception and
-	// to prevent it from causing an immediate overrun error (ORE) once RXNEIE
-	// is enabled by Receive_IT below.
+	// Flush any stale byte left in RDR before arming the new reception.
+	// OVRDIS is set in USART6 init, so ORE cannot fire if a byte is missed.
 	if (__HAL_UART_GET_FLAG(&huart6, UART_FLAG_RXNE))
 	{
 		(void)huart6.Instance->RDR;
@@ -501,7 +492,7 @@ void ds18b20_uart_set_baudrate_wrapper(uint32_t baudrate)
 
 void ds18b20_uart_interrupt(void)
 {
-	ds18b20_interrupt(&ds18b20_sensor);
+	ds18b20_interrupt(&outside_temperature_sensor);
 }
 
 // Called from HAL_UART_ErrorCallback when a blocking UART error (typically ORE)
@@ -510,37 +501,49 @@ void ds18b20_uart_interrupt(void)
 // start a fresh read cycle instead of hanging permanently.
 void ds18b20_uart_error(void)
 {
-	ds18b20_sensor.state = DS18B20_STATE_IDLE;
-	ds18b20_sensor.last_read_tick = HAL_GetTick();
+	outside_temperature_sensor.state = DS18B20_STATE_IDLE;
+	outside_temperature_sensor.last_read_tick = HAL_GetTick();
 }
 
 void commbustion_main(void)
 {	
-	// combustion_controller_main();
-	// combustion_controller_set_exhaust_temperature(max6675_get_temperature(&thermocouple));
+	combustion_controller_main();
+	combustion_controller_set_exhaust_temperature(max6675_get_temperature(&thermocouple));
 
-	// uint8_t fireplac_flap_position = 0;
-	// switch(combustion_controller_get_state())
-	// {
-	// 	case COMBUSTION_STATE_OFF:
-	// 		fireplac_flap_position = 0;
-	// 		break;
-	// 	case COMBUSTION_STATE_STARTUP:
-	// 		fireplac_flap_position = 100;
-	// 		break;
-	// 	case COMBUSTION_STATE_WORKING:
-	// 		fireplac_flap_position = 100;
-	// 		break;
-	// 	case COMBUSTION_STATE_PROTECTION:
-	// 		fireplac_flap_position = 20;
-	// 		break;
-	// 	case COMBUSTION_STATE_ENDING:
-	// 		fireplac_flap_position = 30;
-	// 		break;
-	// 	case COMBUSTION_STATE_COOL_DOWN:
-	// 		fireplac_flap_position = 0;
-	// 		break;
-	// }
-	// flap_controller_set_position(&fireplace_flap, fireplac_flap_position);
-	flap_controller_set_position(&fireplace_flap, 100);
+	uint8_t fireplac_flap_position = 0;
+	switch(combustion_controller_get_state())
+	{
+		case COMBUSTION_STATE_OFF:
+			fireplac_flap_position = 0;
+			break;
+		case COMBUSTION_STATE_STARTUP:
+			fireplac_flap_position = 100;
+			break;
+		case COMBUSTION_STATE_WORKING:
+			fireplac_flap_position = 100;
+			break;
+		case COMBUSTION_STATE_PROTECTION:
+			fireplac_flap_position = 20;
+			break;
+		case COMBUSTION_STATE_ENDING:
+			fireplac_flap_position = 30;
+			break;
+		case COMBUSTION_STATE_COOL_DOWN:
+			fireplac_flap_position = 0;
+			break;
+	}
+	flap_controller_set_position(&fireplace_flap, fireplac_flap_position);
+}
+
+void ventilation_main(void)
+{
+	daily_schedule_result_t ventilation = daily_schedule_get(&ventilation_daily_schedule);
+	if (ventilation.enable)
+	{
+		flap_controller_set_position(&ventilation_flap, ventilation.level);
+	}
+	else
+	{
+		flap_controller_set_position(&ventilation_flap, 0);
+	}
 }
