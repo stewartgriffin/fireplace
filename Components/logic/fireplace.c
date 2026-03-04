@@ -36,17 +36,30 @@
 /**************************************           CONSTANTS                  ******************************************/
 
 // Ventilation schedule configuration
-static const daily_schedule_entry_t ventilation_schedule[] = {
+static const daily_schedule_entry_t fire_on_ventilation_schedule[] = {
 	{0,  0, 5, 40},
 	{4,  0, 0, 0},
-	{8,  0,  20, 50},
-	{15, 0,  5, 50}, 
-	{22, 0, 5, 100}
+	{8,  0,  50, 50},
+	{15, 0,  10, 100}, 
+	{22, 0, 10, 100}
 };
 
-static const daily_schedule_config_t ventilation_schedule_config = {
-	.entries = ventilation_schedule,
-	.num_entries = sizeof(ventilation_schedule) / sizeof(ventilation_schedule[0])
+static const daily_schedule_config_t fire_on_ventilation_schedule_config = {
+	.entries = fire_on_ventilation_schedule,
+	.num_entries = sizeof(fire_on_ventilation_schedule) / sizeof(fire_on_ventilation_schedule[0])
+};
+
+static const daily_schedule_entry_t fire_off_ventilation_schedule[] = {
+	{0,  0, 10, 40},
+	{4,  0, 0, 0},
+	{8,  0,  20, 50},
+	{15, 0,  0, 0}, 
+	{22, 0, 10, 100}
+};
+
+static const daily_schedule_config_t fire_off_ventilation_schedule_config = {
+	.entries = fire_off_ventilation_schedule,
+	.num_entries = sizeof(fire_off_ventilation_schedule) / sizeof(fire_off_ventilation_schedule[0])
 };
 
 /**************************************           LOCAL VARIABLES            ******************************************/
@@ -61,7 +74,8 @@ ui_data_t ui;
 flap_controller_data_t fireplace_flap;
 flap_controller_data_t ventilation_flap;
 
-daily_schedule_data_t ventilation_daily_schedule;
+daily_schedule_data_t fire_on_ventilation_daily_schedule;
+daily_schedule_data_t fire_off_ventilation_daily_schedule;
 
 ds18b20_data_t outside_temperature_sensor;
 
@@ -133,8 +147,11 @@ void fireplace_init(void)
 		flap_controller_init(&fireplace_flap, fireplace_flap_set_open_pin, fireplace_flap_set_close_pin, 3600, 4100U);
 	flap_controller_init(&ventilation_flap, ventilation_flap_set_open_pin, ventilation_flap_set_close_pin, 3600, 4100);
 
-	// Initialize ventilation schedule
-	daily_schedule_init(&ventilation_daily_schedule, &ventilation_schedule_config);
+	// Initialize fire on ventilation schedule
+	daily_schedule_init(&fire_on_ventilation_daily_schedule, &fire_on_ventilation_schedule_config);
+
+	// Initialize fire off ventilation schedule
+	daily_schedule_init(&fire_off_ventilation_daily_schedule, &fire_off_ventilation_schedule_config);
 
 	// Initialize DS18B20 temperature sensor on USART6 (single-wire half-duplex)
 	ds18b20_init(&outside_temperature_sensor, ds18b20_uart_transmit_receive_wrapper, ds18b20_uart_set_baudrate_wrapper);
@@ -155,7 +172,8 @@ void fireplace_main(void)
 	fireplace_update_gui();
 
 	// Update daily schedule
-	daily_schedule_main(&ventilation_daily_schedule, *ds3231_get_time(&clock));
+	daily_schedule_main(&fire_on_ventilation_daily_schedule, *ds3231_get_time(&clock));
+	daily_schedule_main(&fire_off_ventilation_daily_schedule, *ds3231_get_time(&clock));
 
 	// Update flap controllers
 	flap_controller_main(&fireplace_flap);
@@ -537,7 +555,64 @@ void commbustion_main(void)
 
 void ventilation_main(void)
 {
-	daily_schedule_result_t ventilation = daily_schedule_get(&ventilation_daily_schedule);
+	if (ds18b20_get_temperature(&outside_temperature_sensor) >= 18)
+	{
+		flap_controller_set_position(&ventilation_flap, 100);
+		return;
+	}
+
+	time_data_t * time = ds3231_get_time(&clock);
+
+	bool is_summer = ((time->month == 5) && (time->day_of_month >= 15)) ||
+	                 ((time->month > 5) && (time->month < 9)) ||
+	                 ((time->month == 9) && (time->day_of_month <= 15));
+
+	bool is_day = (time->hour >= 8) && (time->hour < 21);
+
+	if (is_summer) 
+	{
+		if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 14))
+		{
+			flap_controller_set_position(&ventilation_flap, 100);
+		}
+		else 
+		{
+			flap_controller_set_position(&ventilation_flap, 30);
+		}
+		return;
+	}
+
+	if (is_day)
+	{
+		if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 15))
+		{
+			flap_controller_set_position(&ventilation_flap, 100);
+			return;
+		}
+		else if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 10))
+		{
+			flap_controller_set_position(&ventilation_flap, 70);
+			return;
+		}
+		else if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 5))
+		{
+			flap_controller_set_position(&ventilation_flap, 50);
+			return;
+		}
+	}
+
+	daily_schedule_result_t ventilation;
+
+	if ((combustion_controller_get_state() == COMBUSTION_STATE_STARTUP) ||
+		(combustion_controller_get_state() == COMBUSTION_STATE_WORKING) ||
+		(combustion_controller_get_state() == COMBUSTION_STATE_PROTECTION))
+	{
+		ventilation = daily_schedule_get(&fire_on_ventilation_daily_schedule);
+	}
+	else {
+		ventilation = daily_schedule_get(&fire_off_ventilation_daily_schedule);
+	}
+
 	if (ventilation.enable)
 	{
 		flap_controller_set_position(&ventilation_flap, ventilation.level);

@@ -14,7 +14,7 @@
 
 /**************************************           DEFINES                    ******************************************/
 #define UPDATE_INTERVAL_MS 1000  // Update every 1 second
-#define DUTY_CYCLE_PERIOD_MINUTES 20  // 20-minute duty cycle period
+#define DUTY_CYCLE_PERIOD_MINUTES 30  // 30-minute duty cycle period
 
 /**************************************           DATA TYPES                 ******************************************/
 
