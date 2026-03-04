@@ -109,7 +109,7 @@ void fireplace_flap_set_close_pin(uint8_t state);
 void ventilation_flap_set_open_pin(uint8_t state);
 void ventilation_flap_set_close_pin(uint8_t state);
 int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uint16_t length);
-void commbustion_main(void);
+void combustion_main(void);
 void ventilation_main(void);
 int ds18b20_uart_transmit_receive_wrapper(uint8_t *tx, uint8_t *rx, uint16_t size);
 void ds18b20_uart_set_baudrate_wrapper(uint32_t baudrate);
@@ -179,7 +179,7 @@ void fireplace_main(void)
 	flap_controller_main(&fireplace_flap);
 	flap_controller_main(&ventilation_flap);
 
-	commbustion_main();
+	combustion_main();
 	ventilation_main();
 
 }
@@ -228,12 +228,8 @@ int clock_i2c_receive(uint8_t mem_addr, uint8_t *data, uint16_t data_size)
 
 int gpio_expander_i2c_send(uint8_t mem_addr, uint8_t *data, uint16_t data_size)
 {
+	(void)mem_addr;  // PCF8574 has no register addresses; address is implicit
 	return HAL_I2C_Master_Transmit_IT(&hi2c3, 0x27 << 1, data, data_size);
-}
-
-int gpio_expander_i2c_receive(uint8_t mem_addr, uint8_t *data, uint16_t data_size)
-{
-	return HAL_I2C_Master_Receive_IT(&hi2c3, 0x27 << 1, data, data_size);
 }
 
 void display_update_pins(uint8_t d4_d7, bool rs, bool e)
@@ -275,7 +271,7 @@ void fireplace_update_gui(void)
 
 	gui_set_ventilation(flap_controller_get_position(&ventilation_flap));
 
-	gui_set_ppm(ds18b20_get_temperature(&outside_temperature_sensor));
+	gui_set_external_temperature((int8_t)ds18b20_get_temperature(&outside_temperature_sensor));
 
 	gui_set_fireplace_temperature(max6675_get_temperature(&thermocouple));
 }
@@ -523,8 +519,8 @@ void ds18b20_uart_error(void)
 	outside_temperature_sensor.last_read_tick = HAL_GetTick();
 }
 
-void commbustion_main(void)
-{	
+void combustion_main(void)
+{
 	combustion_controller_main();
 	combustion_controller_set_exhaust_temperature(max6675_get_temperature(&thermocouple));
 

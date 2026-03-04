@@ -101,10 +101,10 @@ void gui_set_fireplace(uint8_t value);
 void gui_set_ventilation(uint8_t value);
 
 /**
- * @brief Update air quality (PPM) display
- * @param value Air quality value in PPM
+ * @brief Update external temperature display
+ * @param value External temperature in degrees Celsius (signed)
  */
-void gui_set_ppm(uint8_t value);
+void gui_set_external_temperature(int8_t value);
 
 /**
  * @brief Update fireplace temperature display

@@ -80,6 +80,7 @@ char screen_buffer[81] =  // 80 chars + null terminator for safe snprintf
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 static void format_2digit(char *buffer, uint8_t value);
 static void format_3digit_right_justified(char *buffer, uint8_t value);
+static void format_3digit_signed(char *buffer, int8_t value);
 static uint8_t get_focus_position(gui_focus_t focus);
 static void apply_blink_state(void);
 static void gui_focus(gui_focus_t focus);
@@ -309,10 +310,10 @@ void gui_set_ventilation(uint8_t value)
 	format_3digit_right_justified(&screen_buffer[VENTILATION_POS], value);
 }
 
-void gui_set_ppm(uint8_t value)
+void gui_set_external_temperature(int8_t value)
 {
-	// Update Zew t: XXX at position PPM_POS (right justified in 3 chars)
-	format_3digit_right_justified(&screen_buffer[PPM_POS], value);
+	// Update Zew t: XXX at position PPM_POS (right justified in 3 chars, signed)
+	format_3digit_signed(&screen_buffer[PPM_POS], value);
 }
 
 void gui_set_fireplace_temperature(uint8_t value)
@@ -399,6 +400,30 @@ static void format_3digit_right_justified(char *buffer, uint8_t value)
 		buffer[0] = ' ';
 		buffer[1] = ' ';
 		buffer[2] = '0' + value;
+	}
+}
+
+static void format_3digit_signed(char *buffer, int8_t value)
+{
+	if (value < 0)
+	{
+		uint8_t abs_val = (uint8_t)(-value);
+		if (abs_val >= 10)
+		{
+			buffer[0] = '-';
+			buffer[1] = '0' + (abs_val / 10);
+			buffer[2] = '0' + (abs_val % 10);
+		}
+		else
+		{
+			buffer[0] = ' ';
+			buffer[1] = '-';
+			buffer[2] = '0' + abs_val;
+		}
+	}
+	else
+	{
+		format_3digit_right_justified(buffer, (uint8_t)value);
 	}
 }
 

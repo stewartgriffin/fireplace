@@ -105,6 +105,9 @@ fireplace.ioc         # STM32CubeMX project configuration
   - All flag processing happens before state logic, so requests during PROTECTION are honoured
 - ✅ Ventilation schedule integrated: duty-cycle-based open/close driven by time of day
   - Schedule: 10% midnight, 3% at 05:00, 0% at 15:00, 10% at 22:00
+- ✅ DS18B20 external temperature sensor (Components/ds18b20/)
+  - 1-Wire over UART6 half-duplex (PB5, open-drain, AF6)
+  - Non-blocking state machine; returns `int32_t` whole °C
 
 ### Planned Features
 - Air quality sensor integration (PM2.5, CO2, or VOC sensors)
@@ -153,6 +156,16 @@ fireplace.ioc         # STM32CubeMX project configuration
   - Safety and efficiency balanced approach
 
 ## Development Notes
+
+### Recent Progress (2026-03-04)
+- ✅ `fireplace.c` code review and cleanup
+  - `gui_set_ppm` renamed → `gui_set_external_temperature(int8_t)` — fixes negative temperature display bug (int32_t was cast to uint8_t, wrapping negative values)
+  - Added `format_3digit_signed()` to gui.c for correct signed 3-char formatting (` -5`, `-10`)
+  - `gpio_expander_i2c_receive()` removed — dead code, PCF8574 never needs reads in this application
+  - `(void)mem_addr` added to `gpio_expander_i2c_send()` — PCF8574 has no register addresses
+  - `commbustion_main` typo fixed → `combustion_main`
+  - Combustion controller call order (main before set_temperature) confirmed intentional — temperature applies next cycle
+  - Cold daytime (< 5°C) fallthrough to schedule in `ventilation_main()` confirmed intentional
 
 ### Recent Progress (2026-02-27)
 - ✅ Combustion controller added (`Components/combustion_controller/`)
@@ -228,4 +241,4 @@ The GUI blink system uses a backup/restore pattern to handle continuous data upd
 
 ---
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-03-04
