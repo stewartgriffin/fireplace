@@ -20,6 +20,11 @@
 extern "C" {
 #endif
 
+/**************************************           DEFINES                    ******************************************/
+
+#define DS18B20_SAMPLE_COUNT    10U   // Raw measurements per burst
+#define DS18B20_FILTERED_COUNT   5U   // Circular buffer size for burst medians
+
 /**************************************           DATA TYPES                 ******************************************/
 
 /**
@@ -55,12 +60,21 @@ typedef struct {
     ds18b20_state_t state;
 
     // Results
-    int32_t temperature;      // Last measured temperature in whole °C
     bool sensor_present;      // True if sensor responded to the last reset pulse
+
+    // Measurement burst (10 raw samples, then compute median)
+    int32_t raw_samples[DS18B20_SAMPLE_COUNT];         // Raw readings for the current burst
+    uint8_t sample_count;                               // Samples collected so far in current burst
+
+    // Filtered output: circular buffer of burst medians
+    int32_t filtered_samples[DS18B20_FILTERED_COUNT];  // Medians from completed bursts
+    uint8_t filtered_head;                              // Next write index
+    bool    first_burst_done;                           // True once the first burst has completed
 
     // Timing
     uint32_t conversion_start_tick;  // HAL tick when Convert T was issued
-    uint32_t last_read_tick;         // HAL tick when the last read cycle completed
+    uint32_t last_read_tick;         // HAL tick when the last sample completed (inter-sample timer)
+    uint32_t last_burst_tick;        // HAL tick when the last burst completed (inter-burst timer)
 
     // Buffers (largest transfer: 16 bytes for 2 encoded DS18B20 bytes)
     uint8_t tx_buffer[16];
@@ -70,8 +84,6 @@ typedef struct {
     int  (*uart_transmit_receive)(uint8_t *tx, uint8_t *rx, uint16_t size);
     void (*uart_set_baudrate)(uint32_t baudrate);
 } ds18b20_data_t;
-
-/**************************************           DEFINES                    ******************************************/
 
 /**************************************    GLOBAL FUNCTION DECLARATIONS      ******************************************/
 
@@ -91,8 +103,8 @@ void ds18b20_init(ds18b20_data_t *data,
 
 /**
  * @brief Main function — call from the application loop as fast as possible
- * Manages timing: starts a new read cycle every DS18B20_READ_PERIOD_MS and
- * advances the CONVERTING state once the conversion time has elapsed.
+ * Manages burst timing: collects DS18B20_SAMPLE_COUNT measurements per minute,
+ * then idles until the next burst. Also advances CONVERTING state timing.
  * @param data Pointer to the driver data structure
  */
 void ds18b20_main(ds18b20_data_t *data);
@@ -105,9 +117,11 @@ void ds18b20_main(ds18b20_data_t *data);
 void ds18b20_interrupt(ds18b20_data_t *data);
 
 /**
- * @brief Get the last measured temperature
+ * @brief Get the filtered temperature
+ * Returns the average of the DS18B20_FILTERED_COUNT most recent burst medians.
+ * Returns 0 until the first burst of DS18B20_SAMPLE_COUNT measurements completes.
  * @param data Pointer to the driver data structure
- * @return Temperature in whole °C (updated every DS18B20_READ_PERIOD_MS)
+ * @return Filtered temperature in whole °C
  */
 int32_t ds18b20_get_temperature(ds18b20_data_t *data);
 

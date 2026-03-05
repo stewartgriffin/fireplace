@@ -24,8 +24,9 @@
 #define DS18B20_CMD_READ_SCRATCHPAD 0xBEU
 
 // Timing
-#define DS18B20_CONVERSION_TIME_MS  750U   // 12-bit resolution conversion time
-#define DS18B20_READ_PERIOD_MS     2000U   // Interval between temperature reads
+#define DS18B20_CONVERSION_TIME_MS  750U    // 12-bit resolution conversion time
+#define DS18B20_SAMPLE_PERIOD_MS   2000U    // Interval between samples within a burst
+#define DS18B20_BURST_PERIOD_MS   60000U    // Interval between bursts (one burst per minute)
 
 // Reset pulse byte and presence detection
 // At 9600 baud: sending 0xF0 produces a reset waveform.
@@ -49,6 +50,7 @@
 static void encode_byte(uint8_t byte, uint8_t *buf);
 static int32_t decode_temperature(const uint8_t *buf);
 static void start_reset(ds18b20_data_t *data, ds18b20_state_t next_state);
+static int32_t compute_median(int32_t *samples, uint8_t count);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 
@@ -59,22 +61,50 @@ void ds18b20_init(ds18b20_data_t *data,
     data->uart_transmit_receive = uart_transmit_receive;
     data->uart_set_baudrate = uart_set_baudrate;
     data->state = DS18B20_STATE_IDLE;
-    data->temperature = 0;
     data->sensor_present = false;
     data->conversion_start_tick = 0;
+    data->last_read_tick = 0;
 
-    // Set last_read_tick so the first read starts immediately on the first main() call
-    data->last_read_tick = HAL_GetTick() - DS18B20_READ_PERIOD_MS;
+    // Burst state: start with sample_count = DS18B20_SAMPLE_COUNT (burst "done")
+    // and last_burst_tick far in the past so the first burst begins immediately.
+    data->sample_count = DS18B20_SAMPLE_COUNT;
+    data->last_burst_tick = HAL_GetTick() - DS18B20_BURST_PERIOD_MS;
+
+    data->filtered_head = 0;
+    data->first_burst_done = false;
+
+    for (uint8_t i = 0; i < DS18B20_SAMPLE_COUNT; i++)
+    {
+        data->raw_samples[i] = 0;
+    }
+    for (uint8_t i = 0; i < DS18B20_FILTERED_COUNT; i++)
+    {
+        data->filtered_samples[i] = 0;
+    }
 }
 
 void ds18b20_main(ds18b20_data_t *data)
 {
     if (data->state == DS18B20_STATE_IDLE)
     {
-        uint32_t elapsed = HAL_GetTick() - data->last_read_tick;
-        if (elapsed >= DS18B20_READ_PERIOD_MS)
+        if (data->sample_count < DS18B20_SAMPLE_COUNT)
         {
-            start_reset(data, DS18B20_STATE_RESET_CONVERT);
+            // Burst in progress — wait DS18B20_SAMPLE_PERIOD_MS between samples
+            uint32_t elapsed = HAL_GetTick() - data->last_read_tick;
+            if (elapsed >= DS18B20_SAMPLE_PERIOD_MS)
+            {
+                start_reset(data, DS18B20_STATE_RESET_CONVERT);
+            }
+        }
+        else
+        {
+            // Burst complete — wait DS18B20_BURST_PERIOD_MS before next burst
+            uint32_t elapsed = HAL_GetTick() - data->last_burst_tick;
+            if (elapsed >= DS18B20_BURST_PERIOD_MS)
+            {
+                data->sample_count = 0;
+                start_reset(data, DS18B20_STATE_RESET_CONVERT);
+            }
         }
     }
     else if (data->state == DS18B20_STATE_CONVERTING)
@@ -96,8 +126,9 @@ void ds18b20_interrupt(ds18b20_data_t *data)
             data->sensor_present = (data->rx_buffer[0] != DS18B20_NO_PRESENCE_BYTE);
             if (!data->sensor_present)
             {
-                // No device — abort and wait for the next cycle
-                data->last_read_tick = HAL_GetTick();
+                // No device — abort the burst and wait for the next one
+                data->sample_count = DS18B20_SAMPLE_COUNT;
+                data->last_burst_tick = HAL_GetTick();
                 data->state = DS18B20_STATE_IDLE;
                 break;
             }
@@ -124,7 +155,9 @@ void ds18b20_interrupt(ds18b20_data_t *data)
             data->sensor_present = (data->rx_buffer[0] != DS18B20_NO_PRESENCE_BYTE);
             if (!data->sensor_present)
             {
-                data->last_read_tick = HAL_GetTick();
+                // No device — abort the burst and wait for the next one
+                data->sample_count = DS18B20_SAMPLE_COUNT;
+                data->last_burst_tick = HAL_GetTick();
                 data->state = DS18B20_STATE_IDLE;
                 break;
             }
@@ -152,10 +185,34 @@ void ds18b20_interrupt(ds18b20_data_t *data)
 
         case DS18B20_STATE_READING:
         {
-            // Temperature bytes received — decode and return to idle
-            data->temperature = decode_temperature(data->rx_buffer);
+            // Store decoded sample in the burst buffer
+            data->raw_samples[data->sample_count] = decode_temperature(data->rx_buffer);
+            data->sample_count++;
             data->last_read_tick = HAL_GetTick();
             data->state = DS18B20_STATE_IDLE;
+
+            if (data->sample_count == DS18B20_SAMPLE_COUNT)
+            {
+                // Burst complete — compute median and push into the circular filter buffer
+                int32_t median = compute_median(data->raw_samples, DS18B20_SAMPLE_COUNT);
+
+                if (!data->first_burst_done)
+                {
+                    // Seed the entire filter buffer with the first result
+                    for (uint8_t i = 0; i < DS18B20_FILTERED_COUNT; i++)
+                    {
+                        data->filtered_samples[i] = median;
+                    }
+                    data->first_burst_done = true;
+                }
+                else
+                {
+                    data->filtered_samples[data->filtered_head] = median;
+                    data->filtered_head = (uint8_t)((data->filtered_head + 1U) % DS18B20_FILTERED_COUNT);
+                }
+
+                data->last_burst_tick = HAL_GetTick();
+            }
             break;
         }
 
@@ -166,7 +223,12 @@ void ds18b20_interrupt(ds18b20_data_t *data)
 
 int32_t ds18b20_get_temperature(ds18b20_data_t *data)
 {
-    return data->temperature;
+    int32_t sum = 0;
+    for (uint8_t i = 0; i < DS18B20_FILTERED_COUNT; i++)
+    {
+        sum += data->filtered_samples[i];
+    }
+    return sum / (int32_t)DS18B20_FILTERED_COUNT;
 }
 
 bool ds18b20_is_sensor_present(ds18b20_data_t *data)
@@ -215,6 +277,37 @@ static int32_t decode_temperature(const uint8_t *buf)
     // Integer °C = raw >> 4  (arithmetic right shift on int16_t)
     int16_t raw = (int16_t)((uint16_t)msb << 8 | (uint16_t)lsb);
     return (int32_t)(raw >> 4);
+}
+
+/**
+ * @brief Compute the median of an int32_t array using insertion sort on a local copy
+ * For an even-length array, returns the upper-middle element (index count/2).
+ * @param samples  Array of @p count values (not modified)
+ * @param count    Number of elements (must be <= DS18B20_SAMPLE_COUNT)
+ * @return Median value
+ */
+static int32_t compute_median(int32_t *samples, uint8_t count)
+{
+    int32_t sorted[DS18B20_SAMPLE_COUNT];
+    for (uint8_t i = 0; i < count; i++)
+    {
+        sorted[i] = samples[i];
+    }
+
+    // Insertion sort
+    for (uint8_t i = 1; i < count; i++)
+    {
+        int32_t key = sorted[i];
+        int8_t  j   = (int8_t)(i - 1);
+        while (j >= 0 && sorted[j] > key)
+        {
+            sorted[j + 1] = sorted[j];
+            j--;
+        }
+        sorted[j + 1] = key;
+    }
+
+    return sorted[count / 2U];
 }
 
 /**
