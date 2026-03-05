@@ -261,6 +261,7 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* i2cHandle)
 /* USER CODE BEGIN 1 */
 
 extern void clock_i2c_interrupt(void);
+extern void clock_i2c_error(void);
 extern void gpio_expander_i2c_interrupt(void);
 extern void display_i2c_interrupt(void);
 
@@ -347,7 +348,8 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
     {
         i2c_error_count++;
         i2c_last_error = hi2c->ErrorCode;
-        // I2C2_Recovery();
+        clock_i2c_error();
+        I2C2_Recovery();
     }
     else if (hi2c->Instance == I2C3)
     {

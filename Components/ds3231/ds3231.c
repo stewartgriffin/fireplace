@@ -490,6 +490,19 @@ void ds3231_resume_time_read(ds3231_data_t * this)
 	this->time_read_paused = false;
 }
 
+void ds3231_error(ds3231_data_t * this)
+{
+	this->state = DS3231_STATE_IDLE;
+	this->time_read_in_progress = false;
+	this->status_read_in_progress = false;
+	this->time_update_waiting_for_interrupt = false;
+	this->alarm1_update_waiting_for_interrupt = false;
+	this->alarm2_update_waiting_for_interrupt = false;
+	this->alarm1_read_in_progress = false;
+	this->alarm2_read_in_progress = false;
+	this->osf_clear_pending = false;
+}
+
 /**************************************      LOCAL FUNCTION DEFINITIONS      ******************************************/
 static void serialize_current_time(ds3231_data_t * this)
 {

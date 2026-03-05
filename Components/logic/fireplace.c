@@ -189,6 +189,11 @@ void clock_i2c_interrupt(void)
 	ds3231_interrupt(&clock);
 }
 
+void clock_i2c_error(void)
+{
+	ds3231_error(&clock);
+}
+
 void gpio_expander_i2c_interrupt(void)
 {
 	// pcf8574_interrupt will call the registered callback if this was a write operation

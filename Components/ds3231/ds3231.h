@@ -127,6 +127,7 @@ void ds3231_read_alarm2(ds3231_data_t * this);
 time_data_t * ds3231_get_time(ds3231_data_t * this);
 void ds3231_pause_time_read(ds3231_data_t * this);
 void ds3231_resume_time_read(ds3231_data_t * this);
+void ds3231_error(ds3231_data_t * this);
 
 /* CPP GUARD END */
 #ifdef __cplusplus
