@@ -117,11 +117,12 @@ void ds18b20_main(ds18b20_data_t *data);
 void ds18b20_interrupt(ds18b20_data_t *data);
 
 /**
- * @brief Get the filtered temperature
+ * @brief Get the filtered temperature in tenths of °C
  * Returns the average of the DS18B20_FILTERED_COUNT most recent burst medians.
  * Returns 0 until the first burst of DS18B20_SAMPLE_COUNT measurements completes.
+ * Example: 205 = 20.5 °C, -53 = -5.3 °C
  * @param data Pointer to the driver data structure
- * @return Filtered temperature in whole °C
+ * @return Filtered temperature in tenths of °C (divide by 10 to get °C)
  */
 int32_t ds18b20_get_temperature(ds18b20_data_t *data);
 

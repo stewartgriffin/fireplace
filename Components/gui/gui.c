@@ -19,7 +19,7 @@
 #define FIREPLACE_POS       4   // K%: XXX (position for XXX)
 #define TEMP_POS           17   // Kom t: XXX (position for XXX)
 #define VENTILATION_POS    24   // W%: XXX (position for XXX)
-#define PPM_POS            37   // Zew t: XXX (position for XXX)
+#define PPM_POS            36   // Zew t:XX.X (position for first char of 4-char field)
 #define TIME_POS           60   // HH:MM:SS (position for HH)
 #define DATE_POS           72   // DD.MM.YY (position for DD)
 
@@ -39,8 +39,8 @@ typedef enum
 
 /**************************************           LOCAL VARIABLES            ******************************************/
 /*
-"K%: XXX     Kom t: XXX"
-"W%: XXX     Zew t: XXX"
+"K%: XXX  Kom t:  XXX"
+"W%: XXX  Zew t: XX.X"  <- Zew t: field is 4 chars with decimal (tenths of degC)
 "                    "
 "22:33:44    12.03.25";
 */
@@ -65,9 +65,9 @@ char screen_buffer[81] =  // 80 chars + null terminator for safe snprintf
 	// Line 1: "K%:       Kom t:   "
 	'K', '%', ':', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'K', 'o', 'm',
 	' ', 't', ':', ' ', ' ', ' ', ' ',
-	// Line 2: "W%:       Zew t:   "
-	'W', '%', ':', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'Z',
-	'e', 'w', ' ', 't', ':', ' ', ' ', ' ', ' ',
+	// Line 2: "W%:      Zew t:    "
+	'W', '%', ':', ' ', ' ', ' ', ' ', ' ', ' ', 'Z',
+	'e', 'w', ' ', 't', ':', ' ', ' ', ' ', ' ', ' ',
 	// Line 3: "                    "
 	' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
 	' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
@@ -80,7 +80,7 @@ char screen_buffer[81] =  // 80 chars + null terminator for safe snprintf
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 static void format_2digit(char *buffer, uint8_t value);
 static void format_3digit_right_justified(char *buffer, uint8_t value);
-static void format_3digit_signed(char *buffer, int8_t value);
+static void format_4digit_signed_tenths(char *buffer, int16_t tenths);
 static uint8_t get_focus_position(gui_focus_t focus);
 static void apply_blink_state(void);
 static void gui_focus(gui_focus_t focus);
@@ -310,10 +310,10 @@ void gui_set_ventilation(uint8_t value)
 	format_3digit_right_justified(&screen_buffer[VENTILATION_POS], value);
 }
 
-void gui_set_external_temperature(int8_t value)
+void gui_set_external_temperature(int16_t value)
 {
-	// Update Zew t: XXX at position PPM_POS (right justified in 3 chars, signed)
-	format_3digit_signed(&screen_buffer[PPM_POS], value);
+	// Update Zew t:XX.X at position PPM_POS (4-char signed tenths-of-°C field)
+	format_4digit_signed_tenths(&screen_buffer[PPM_POS], value);
 }
 
 void gui_set_fireplace_temperature(uint8_t value)
@@ -403,27 +403,55 @@ static void format_3digit_right_justified(char *buffer, uint8_t value)
 	}
 }
 
-static void format_3digit_signed(char *buffer, int8_t value)
+static void format_4digit_signed_tenths(char *buffer, int16_t tenths)
 {
-	if (value < 0)
+	// Formats tenths-of-°C into 4 characters at buffer[0..3] (no null terminator).
+	// Examples:  205 →  "20.5",  53 →  " 5.3",  -53 → "-5.3", -105 → "-10 "
+	// For |integer part| >= 10 and negative, the decimal is dropped to fit 4 chars.
+	if (tenths < 0)
 	{
-		uint8_t abs_val = (uint8_t)(-value);
-		if (abs_val >= 10)
+		int16_t abs_tenths = (int16_t)(-tenths);
+		uint8_t int_part  = (uint8_t)(abs_tenths / 10);
+		uint8_t frac_part = (uint8_t)(abs_tenths % 10);
+
+		if (int_part >= 10)
 		{
+			// -10°C and below: show "-XX " (integer only, trailing space)
 			buffer[0] = '-';
-			buffer[1] = '0' + (abs_val / 10);
-			buffer[2] = '0' + (abs_val % 10);
+			buffer[1] = '0' + (int_part / 10);
+			buffer[2] = '0' + (int_part % 10);
+			buffer[3] = ' ';
 		}
 		else
 		{
-			buffer[0] = ' ';
-			buffer[1] = '-';
-			buffer[2] = '0' + abs_val;
+			// -0.1 to -9.9: "-X.X"
+			buffer[0] = '-';
+			buffer[1] = '0' + int_part;
+			buffer[2] = '.';
+			buffer[3] = '0' + frac_part;
 		}
 	}
 	else
 	{
-		format_3digit_right_justified(buffer, (uint8_t)value);
+		uint8_t int_part  = (uint8_t)(tenths / 10);
+		uint8_t frac_part = (uint8_t)(tenths % 10);
+
+		if (int_part >= 10)
+		{
+			// 10.0 to 99.9: "XX.X"
+			buffer[0] = '0' + (int_part / 10);
+			buffer[1] = '0' + (int_part % 10);
+			buffer[2] = '.';
+			buffer[3] = '0' + frac_part;
+		}
+		else
+		{
+			// 0.0 to 9.9: " X.X"
+			buffer[0] = ' ';
+			buffer[1] = '0' + int_part;
+			buffer[2] = '.';
+			buffer[3] = '0' + frac_part;
+		}
 	}
 }
 

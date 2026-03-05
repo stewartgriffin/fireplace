@@ -102,9 +102,9 @@ void gui_set_ventilation(uint8_t value);
 
 /**
  * @brief Update external temperature display
- * @param value External temperature in degrees Celsius (signed)
+ * @param value External temperature in tenths of °C (e.g. 205 = 20.5°C, -53 = -5.3°C)
  */
-void gui_set_external_temperature(int8_t value);
+void gui_set_external_temperature(int16_t value);
 
 /**
  * @brief Update fireplace temperature display

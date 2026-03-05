@@ -271,7 +271,7 @@ void fireplace_update_gui(void)
 
 	gui_set_ventilation(flap_controller_get_position(&ventilation_flap));
 
-	gui_set_external_temperature((int8_t)ds18b20_get_temperature(&outside_temperature_sensor));
+	gui_set_external_temperature((int16_t)ds18b20_get_temperature(&outside_temperature_sensor));
 
 	gui_set_fireplace_temperature(max6675_get_temperature(&thermocouple));
 }
@@ -551,7 +551,7 @@ void combustion_main(void)
 
 void ventilation_main(void)
 {
-	if (ds18b20_get_temperature(&outside_temperature_sensor) >= 18)
+	if (ds18b20_get_temperature(&outside_temperature_sensor) >= 180)
 	{
 		flap_controller_set_position(&ventilation_flap, 100);
 		return;
@@ -567,7 +567,7 @@ void ventilation_main(void)
 
 	if (is_summer) 
 	{
-		if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 14))
+		if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 140))
 		{
 			flap_controller_set_position(&ventilation_flap, 100);
 		}
@@ -580,17 +580,17 @@ void ventilation_main(void)
 
 	if (is_day)
 	{
-		if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 15))
+		if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 150))
 		{
 			flap_controller_set_position(&ventilation_flap, 100);
 			return;
 		}
-		else if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 10))
+		else if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 100))
 		{
 			flap_controller_set_position(&ventilation_flap, 70);
 			return;
 		}
-		else if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 5))
+		else if ((ds18b20_get_temperature(&outside_temperature_sensor) >= 50))
 		{
 			flap_controller_set_position(&ventilation_flap, 50);
 			return;

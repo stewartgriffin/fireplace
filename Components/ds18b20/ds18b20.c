@@ -273,10 +273,10 @@ static int32_t decode_temperature(const uint8_t *buf)
         if (buf[i + 8] == 0xFFU) { msb |= (uint8_t)(1U << i); }
     }
 
-    // DS18B20 raw value: signed 16-bit, resolution 0.0625 °C per LSB
-    // Integer °C = raw >> 4  (arithmetic right shift on int16_t)
+    // DS18B20 raw value: signed 16-bit, resolution 0.0625 °C per LSB (= 1/16 °C)
+    // Return tenths of °C: (raw * 10 + 8) / 16  — rounds to nearest 0.1 °C
     int16_t raw = (int16_t)((uint16_t)msb << 8 | (uint16_t)lsb);
-    return (int32_t)(raw >> 4);
+    return ((int32_t)raw * 10 + 8) / 16;
 }
 
 /**
