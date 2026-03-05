@@ -108,6 +108,11 @@ fireplace.ioc         # STM32CubeMX project configuration
 - ✅ DS18B20 external temperature sensor (Components/ds18b20/)
   - 1-Wire over UART6 half-duplex (PB5, open-drain, AF6)
   - Non-blocking state machine; returns `int32_t` whole °C
+- ✅ I2C error recovery for both buses
+  - I2C2 (DS3231): `ds3231_error()` resets state machine → `I2C2_Recovery()` clocks bus free → re-init
+  - I2C3 (PCF8574/HD44780/GUI): `pcf8574_error()` + `hd44780_error()` + `gui_error()` reset chain → `I2C3_Recovery()` → re-init
+  - `gui_error()` blanks `display_buffer` to force full redraw on next `gui_main()` call
+  - Called from `HAL_I2C_ErrorCallback` in `i2c.c`; `HAL_Delay` safe at priority 5 (TIM1 at priority 0 can preempt)
 
 ### Planned Features
 - Air quality sensor integration (PM2.5, CO2, or VOC sensors)
@@ -156,6 +161,17 @@ fireplace.ioc         # STM32CubeMX project configuration
   - Safety and efficiency balanced approach
 
 ## Development Notes
+
+### Recent Progress (2026-03-05)
+- ✅ I2C error recovery added for both I2C buses
+  - `ds3231_error()` added to ds3231 driver (resets all in-progress flags to IDLE)
+  - `pcf8574_error()` added to pcf8574 driver (clears `write_in_progress`)
+  - `hd44780_error()` added to hd44780 driver (resets state/transfer_state/flags to IDLE)
+  - `gui_error()` added to GUI (blanks `display_buffer` → forces full screen resend)
+  - `clock_i2c_error()` and `gpio_expander_i2c_error()` added to fireplace.c/fireplace.h
+  - `I2C3_Recovery()` added to i2c.c/i2c.h (mirrors I2C2_Recovery, SCL=PA8, SDA=PC9)
+  - `HAL_I2C_ErrorCallback` updated to call error handler + recovery for each bus
+- ✅ Confirmed GUI diff-based update is safe: `display_buffer` only updated after confirmed successful transfer (result == 0)
 
 ### Recent Progress (2026-03-04)
 - ✅ `fireplace.c` code review and cleanup
@@ -241,4 +257,4 @@ The GUI blink system uses a backup/restore pattern to handle continuous data upd
 
 ---
 
-**Last Updated**: 2026-03-04
+**Last Updated**: 2026-03-05
