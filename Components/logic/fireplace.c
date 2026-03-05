@@ -144,7 +144,7 @@ void fireplace_init(void)
 
 	// Initialize flap controllers
 	// flap_controller_init(&fireplace_flap, fireplace_flap_set_open_pin, fireplace_flap_set_close_pin, 4500U, 6000U);
-		flap_controller_init(&fireplace_flap, fireplace_flap_set_open_pin, fireplace_flap_set_close_pin, 3600, 4100U);
+	flap_controller_init(&fireplace_flap, fireplace_flap_set_open_pin, fireplace_flap_set_close_pin, 3600, 4100U);
 	flap_controller_init(&ventilation_flap, ventilation_flap_set_open_pin, ventilation_flap_set_close_pin, 3600, 4100);
 
 	// Initialize fire on ventilation schedule
@@ -198,6 +198,13 @@ void gpio_expander_i2c_interrupt(void)
 {
 	// pcf8574_interrupt will call the registered callback if this was a write operation
 	pcf8574_interrupt(&gpio_expander);
+}
+
+void gpio_expander_i2c_error(void)
+{
+	pcf8574_error(&gpio_expander);
+	hd44780_error(&display);
+	gui_error();
 }
 
 void display_i2c_interrupt(void)

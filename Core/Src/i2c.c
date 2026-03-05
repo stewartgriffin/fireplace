@@ -263,6 +263,7 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* i2cHandle)
 extern void clock_i2c_interrupt(void);
 extern void clock_i2c_error(void);
 extern void gpio_expander_i2c_interrupt(void);
+extern void gpio_expander_i2c_error(void);
 extern void display_i2c_interrupt(void);
 
 // Global variable to track I2C errors (for debugging)
@@ -310,6 +311,42 @@ void I2C2_Recovery(void)
     MX_I2C2_Init();
 }
 
+void I2C3_Recovery(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    HAL_I2C_DeInit(&hi2c3);
+
+    __HAL_RCC_I2C3_FORCE_RESET();
+    HAL_Delay(10);
+    __HAL_RCC_I2C3_RELEASE_RESET();
+
+    // SCL = PA8, SDA = PC9
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+
+    GPIO_InitStruct.Pin = GPIO_PIN_8;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    for (int i = 0; i < 9; i++)
+    {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+        HAL_Delay(1);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+        HAL_Delay(1);
+
+        if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_9) == GPIO_PIN_SET)
+        {
+            break;
+        }
+    }
+
+    MX_I2C3_Init();
+}
+
 void HAL_I2C_MemTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
     if (hi2c->Instance == I2C2)
@@ -355,6 +392,8 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
     {
         i2c3_error_count++;
         i2c3_last_error = hi2c->ErrorCode;
+        gpio_expander_i2c_error();
+        I2C3_Recovery();
     }
 }
 

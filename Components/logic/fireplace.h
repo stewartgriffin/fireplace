@@ -28,6 +28,7 @@ void fireplace_main(void);
 void clock_i2c_interrupt(void);
 void clock_i2c_error(void);
 void gpio_expander_i2c_interrupt(void);
+void gpio_expander_i2c_error(void);
 void display_i2c_interrupt(void);
 void thermocouple_spi_interrupt(void);
 void keyboard_adc_interrupt(void);

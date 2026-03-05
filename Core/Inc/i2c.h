@@ -46,6 +46,7 @@ void MX_I2C3_Init(void);
 /* USER CODE BEGIN Prototypes */
 
 void I2C2_Recovery(void);
+void I2C3_Recovery(void);
 
 /* USER CODE END Prototypes */
 

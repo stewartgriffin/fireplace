@@ -464,6 +464,15 @@ void hd44780_transfer_complete(hd44780_data_t * this)
 	this->transfer_complete = true;
 }
 
+void hd44780_error(hd44780_data_t * this)
+{
+	this->state = HD44780_STATE_IDLE;
+	this->transfer_state = HD44780_TRANSFER_IDLE;
+	this->transfer_complete = false;
+	this->buffer_write_in_progress = false;
+	this->buffer_write_partial = false;
+}
+
 int hd44780_write_buffer(hd44780_data_t * this, const char * buffer)
 {
 	// Only accept new buffer write when in IDLE state and not already writing

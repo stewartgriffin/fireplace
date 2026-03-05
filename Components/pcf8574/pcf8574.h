@@ -88,6 +88,7 @@ void pcf8574_interrupt(pcf8574_data_t * this);
  * @param data 8-bit value to write to GPIO pins
  */
 void pcf8574_write(pcf8574_data_t * this, uint8_t data);
+void pcf8574_error(pcf8574_data_t * this);
 
 /* CPP GUARD END */
 #ifdef __cplusplus

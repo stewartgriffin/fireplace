@@ -327,6 +327,16 @@ char * gui_get_screen_buffer(void)
 	return screen_buffer;
 }
 
+void gui_error(void)
+{
+	for (uint16_t i = 0; i < 80; i++)
+	{
+		display_buffer[i] = ' ';
+	}
+	update_state = GUI_UPDATE_IDLE;
+	scan_position = 0;
+}
+
 /**************************************      LOCAL FUNCTION DEFINITIONS      ******************************************/
 static uint8_t get_focus_position(gui_focus_t focus)
 {

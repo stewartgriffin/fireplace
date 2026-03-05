@@ -73,4 +73,9 @@ void pcf8574_write(pcf8574_data_t * this, uint8_t data)
 	this->write_request = true;
 }
 
+void pcf8574_error(pcf8574_data_t * this)
+{
+	this->write_in_progress = false;
+}
+
 /**************************************      LOCAL FUNCTION DEFINITIONS      ******************************************/

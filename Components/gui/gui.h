@@ -118,6 +118,12 @@ void gui_set_fireplace_temperature(uint8_t value);
  */
 char * gui_get_screen_buffer(void);
 
+/**
+ * @brief Reset GUI display tracking after I2C error
+ * Invalidates display_buffer so full screen is resent on next gui_main() call
+ */
+void gui_error(void);
+
 /* CPP GUARD END */
 #ifdef __cplusplus
 }

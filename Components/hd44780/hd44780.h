@@ -129,6 +129,7 @@ void hd44780_main(hd44780_data_t * this);
  * @param this Pointer to HD44780 data structure
  */
 void hd44780_transfer_complete(hd44780_data_t * this);
+void hd44780_error(hd44780_data_t * this);
 
 /**
  * @brief Write buffer to display
