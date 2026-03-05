@@ -23,6 +23,16 @@ extern "C" {
 /**************************************           DATA TYPES                 ******************************************/
 
 /**
+ * @brief Direction of temperature change for hysteresis filtering
+ */
+typedef enum
+{
+	MAX6675_DIRECTION_NONE,     ///< No direction established yet (initial state)
+	MAX6675_DIRECTION_RISING,   ///< Temperature trending upward
+	MAX6675_DIRECTION_FALLING,  ///< Temperature trending downward
+} max6675_direction_t;
+
+/**
  * @brief MAX6675 thermocouple-to-digital converter driver data structure
  * Reads temperature from K-type thermocouple via SPI interface
  * Temperature resolution: 0.25°C (12-bit)
@@ -39,7 +49,9 @@ typedef struct
 	 */
 	int (*spi_start_transfer)(uint8_t *tx_buffer, uint8_t * rx_buffer, uint16_t size);
 
-	uint32_t temperature;           ///< Last measured temperature in degrees Celsius
+	uint32_t temperature;           ///< Last raw temperature reading in degrees Celsius
+	uint32_t filtered_temperature;  ///< Filtered temperature with directional hysteresis
+	max6675_direction_t direction;  ///< Current accepted direction of temperature change
 	uint32_t tick_timer;            ///< Tick counter for timing
 	uint32_t last_tick;             ///< Last HAL_GetTick() value for calculating elapsed time
 	bool conection_open;            ///< True if thermocouple is connected

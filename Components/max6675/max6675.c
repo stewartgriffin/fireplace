@@ -16,6 +16,7 @@
 /**************************************           DEFINES                    ******************************************/
 #define MAX6675_SPI_TRANSFER_LENGTH 1
 #define MAX6675_READ_PERIOD_MS 1000  // Read temperature every 1000ms
+#define MAX6675_HYSTERESIS_DEG 2    // Degrees C required to reverse direction
 
 /**************************************           DATA TYPES                 ******************************************/
 
@@ -36,6 +37,9 @@ void max6675_init(max6675_data_t * this,
 	this->tick_timer = 0;
 	this->last_tick = HAL_GetTick();
 	this->transfer_in_progress = false;
+	this->temperature = 0;
+	this->filtered_temperature = 0;
+	this->direction = MAX6675_DIRECTION_NONE;
 }
 
 void max6675_main(max6675_data_t * this)
@@ -65,7 +69,7 @@ void max6675_main(max6675_data_t * this)
 
 int max6675_get_temperature(max6675_data_t * this)
 {
-	return this->temperature;
+	return this->filtered_temperature;
 }
 
 void max6675_spi_irq_handler(max6675_data_t * this)
@@ -76,8 +80,47 @@ void max6675_spi_irq_handler(max6675_data_t * this)
 
 void max6675_serialize_spi_data(max6675_data_t * this)
 {
-	this->temperature = ((uint32_t)this->rx_buffer[0] >> 3);
-	this->temperature |= ((uint32_t)this->rx_buffer[1] << 5);
-	this->temperature = this->temperature / 4;
+	uint32_t raw = ((uint32_t)this->rx_buffer[0] >> 3);
+	raw |= ((uint32_t)this->rx_buffer[1] << 5);
+	raw = raw / 4;
 	this->conection_open = ((this->rx_buffer[0] & 0x04) == 0x04);
+	this->temperature = raw;
+
+	if (this->direction == MAX6675_DIRECTION_NONE)
+	{
+		if (raw > this->filtered_temperature)
+		{
+			this->direction = MAX6675_DIRECTION_RISING;
+			this->filtered_temperature = raw;
+		}
+		else if (raw < this->filtered_temperature)
+		{
+			this->direction = MAX6675_DIRECTION_FALLING;
+			this->filtered_temperature = raw;
+		}
+	}
+	else if (this->direction == MAX6675_DIRECTION_RISING)
+	{
+		if (raw >= this->filtered_temperature)
+		{
+			this->filtered_temperature = raw;
+		}
+		else if ((this->filtered_temperature - raw) >= MAX6675_HYSTERESIS_DEG)
+		{
+			this->direction = MAX6675_DIRECTION_FALLING;
+			this->filtered_temperature = raw;
+		}
+	}
+	else // MAX6675_DIRECTION_FALLING
+	{
+		if (raw <= this->filtered_temperature)
+		{
+			this->filtered_temperature = raw;
+		}
+		else if ((raw - this->filtered_temperature) >= MAX6675_HYSTERESIS_DEG)
+		{
+			this->direction = MAX6675_DIRECTION_RISING;
+			this->filtered_temperature = raw;
+		}
+	}
 }
