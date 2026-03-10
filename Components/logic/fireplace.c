@@ -28,6 +28,7 @@
 #include "combustion_controller.h"
 #include "ds18b20.h"
 #include "usart.h"
+#include "comm.h"
 
 /**************************************           DEFINES                    ******************************************/
 
@@ -37,11 +38,7 @@
 
 // Ventilation schedule configuration
 static const daily_schedule_entry_t fire_on_ventilation_schedule[] = {
-	{0,  0, 5, 40},
-	{4,  0, 0, 0},
-	{8,  0,  50, 50},
-	{15, 0,  10, 100}, 
-	{22, 0, 10, 100}
+	{0,  0, 50, 100},
 };
 
 static const daily_schedule_config_t fire_on_ventilation_schedule_config = {
@@ -51,8 +48,8 @@ static const daily_schedule_config_t fire_on_ventilation_schedule_config = {
 
 static const daily_schedule_entry_t fire_off_ventilation_schedule[] = {
 	{0,  0, 10, 40},
-	{4,  0, 0, 0},
-	{8,  0,  20, 50},
+	{1,  0, 0, 0},
+	{8,  0,  50, 50},
 	{15, 0,  0, 0}, 
 	{22, 0, 10, 100}
 };
@@ -78,6 +75,8 @@ daily_schedule_data_t fire_on_ventilation_daily_schedule;
 daily_schedule_data_t fire_off_ventilation_daily_schedule;
 
 ds18b20_data_t outside_temperature_sensor;
+
+comm_data_t comm;
 
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size);
@@ -114,6 +113,13 @@ void ventilation_main(void);
 int ds18b20_uart_transmit_receive_wrapper(uint8_t *tx, uint8_t *rx, uint16_t size);
 void ds18b20_uart_set_baudrate_wrapper(uint32_t baudrate);
 void ds18b20_uart_interrupt(void);
+int  comm_uart_transmit_wrapper(uint8_t *data, uint16_t size);
+int  comm_uart_receive_wrapper(uint8_t *data, uint16_t size);
+time_data_t *comm_get_time_wrapper(void);
+void comm_on_fireplace_enable(void);
+void comm_on_fireplace_disable(void);
+void comm_on_ventilation_enable(void);
+void comm_on_ventilation_disable(void);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 void fireplace_init(void)
@@ -155,6 +161,16 @@ void fireplace_init(void)
 
 	// Initialize DS18B20 temperature sensor on USART6 (single-wire half-duplex)
 	ds18b20_init(&outside_temperature_sensor, ds18b20_uart_transmit_receive_wrapper, ds18b20_uart_set_baudrate_wrapper);
+
+	// Initialize RS485 communication with display on UART4
+	comm_init(&comm,
+			comm_uart_transmit_wrapper,
+			comm_uart_receive_wrapper,
+			comm_get_time_wrapper,
+			comm_on_fireplace_enable,
+			comm_on_fireplace_disable,
+			comm_on_ventilation_enable,
+			comm_on_ventilation_disable);
 }
 
 void fireplace_main(void)
@@ -181,6 +197,7 @@ void fireplace_main(void)
 
 	combustion_main();
 	ventilation_main();
+	comm_main(&comm);
 
 }
 
@@ -521,6 +538,16 @@ void ds18b20_uart_interrupt(void)
 	ds18b20_interrupt(&outside_temperature_sensor);
 }
 
+void comm_uart_rx_interrupt(void)
+{
+	comm_rx_interrupt(&comm);
+}
+
+void comm_uart_tx_interrupt(void)
+{
+	comm_tx_interrupt(&comm);
+}
+
 // Called from HAL_UART_ErrorCallback when a blocking UART error (typically ORE)
 // aborts an ongoing Receive_IT.  The DS18B20 state machine is stuck in whatever
 // state it was in — reset it to IDLE so the next ds18b20_main() call can
@@ -559,6 +586,49 @@ void combustion_main(void)
 			break;
 	}
 	flap_controller_set_position(&fireplace_flap, fireplac_flap_position);
+}
+
+void comm_uart_error(void)
+{
+	// ORE or framing error aborted the ongoing Receive_IT — reset parser state
+	// and re-arm so the comm state machine doesn't stall permanently.
+	comm.rx_state = COMM_RX_SOF;
+	HAL_UART_Receive_IT(&huart4, &comm.rx_byte, 1);
+}
+
+int comm_uart_transmit_wrapper(uint8_t *data, uint16_t size)
+{
+	return HAL_UART_Transmit_IT(&huart4, data, size);
+}
+
+int comm_uart_receive_wrapper(uint8_t *data, uint16_t size)
+{
+	return HAL_UART_Receive_IT(&huart4, data, size);
+}
+
+time_data_t *comm_get_time_wrapper(void)
+{
+	return ds3231_get_time(&clock);
+}
+
+void comm_on_fireplace_enable(void)
+{
+	combustion_controller_startup_requested();
+}
+
+void comm_on_fireplace_disable(void)
+{
+	combustion_controller_end_requested();
+}
+
+void comm_on_ventilation_enable(void)
+{
+	/* do nothing */
+}
+
+void comm_on_ventilation_disable(void)
+{
+	/* do nothing */
 }
 
 void ventilation_main(void)
@@ -616,17 +686,24 @@ void ventilation_main(void)
 		(combustion_controller_get_state() == COMBUSTION_STATE_PROTECTION))
 	{
 		ventilation = daily_schedule_get(&fire_on_ventilation_daily_schedule);
+		if (ventilation.enable)
+		{
+			flap_controller_set_position(&ventilation_flap, 100);
+		}
+		else
+		{
+			flap_controller_set_position(&ventilation_flap, 70);
+		}
 	}
 	else {
 		ventilation = daily_schedule_get(&fire_off_ventilation_daily_schedule);
-	}
-
-	if (ventilation.enable)
-	{
-		flap_controller_set_position(&ventilation_flap, ventilation.level);
-	}
-	else
-	{
-		flap_controller_set_position(&ventilation_flap, 0);
+		if (ventilation.enable)
+		{
+			flap_controller_set_position(&ventilation_flap, ventilation.level);
+		}
+		else
+		{
+			flap_controller_set_position(&ventilation_flap, 30);
+		}
 	}
 }

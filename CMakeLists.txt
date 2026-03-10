@@ -57,6 +57,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Components/daily_schedule/daily_schedule.c
     Components/combustion_controller/combustion_controller.c
     Components/ds18b20/ds18b20.c
+    Components/comm/comm.c
 )
 
 # Add include paths
@@ -74,6 +75,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Components/daily_schedule
     Components/combustion_controller
     Components/ds18b20
+    Components/comm
 )
 
 # Add project symbols (macros)

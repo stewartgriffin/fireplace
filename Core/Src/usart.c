@@ -48,7 +48,8 @@ void MX_UART4_Init(void)
   huart4.Init.OverSampling = UART_OVERSAMPLING_16;
   huart4.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
   huart4.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-  huart4.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  huart4.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_RXOVERRUNDISABLE_INIT;
+  huart4.AdvancedInit.OverrunDisable = UART_ADVFEATURE_OVERRUN_DISABLE;
   if (HAL_UART_Init(&huart4) != HAL_OK)
   {
     Error_Handler();
@@ -140,18 +141,21 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     /* UART4 clock enable */
     __HAL_RCC_UART4_CLK_ENABLE();
 
-    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
     /**UART4 GPIO Configuration
-    PA11     ------> UART4_RX
-    PA12     ------> UART4_TX
+    PC10     ------> UART4_TX
+    PC11     ------> UART4_RX
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_11|GPIO_PIN_12;
+    GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_11;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Alternate = GPIO_AF6_UART4;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    GPIO_InitStruct.Alternate = GPIO_AF8_UART4;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
+    /* UART4 interrupt Init */
+    HAL_NVIC_SetPriority(UART4_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(UART4_IRQn);
   /* USER CODE BEGIN UART4_MspInit 1 */
 
   /* USER CODE END UART4_MspInit 1 */
@@ -206,11 +210,13 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
     __HAL_RCC_UART4_CLK_DISABLE();
 
     /**UART4 GPIO Configuration
-    PA11     ------> UART4_RX
-    PA12     ------> UART4_TX
+    PC10     ------> UART4_TX
+    PC11     ------> UART4_RX
     */
-    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_11|GPIO_PIN_12);
+    HAL_GPIO_DeInit(GPIOC, GPIO_PIN_10|GPIO_PIN_11);
 
+    /* UART4 interrupt Deinit */
+    HAL_NVIC_DisableIRQ(UART4_IRQn);
   /* USER CODE BEGIN UART4_MspDeInit 1 */
 
   /* USER CODE END UART4_MspDeInit 1 */
@@ -240,6 +246,9 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 
 extern void ds18b20_uart_interrupt(void);
 extern void ds18b20_uart_error(void);
+extern void comm_uart_rx_interrupt(void);
+extern void comm_uart_tx_interrupt(void);
+extern void comm_uart_error(void);
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -255,11 +264,18 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
         // the transfer chain to stall permanently.
         ds18b20_uart_interrupt();
     }
+    if (huart->Instance == UART4)
+    {
+        comm_uart_tx_interrupt();
+    }
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    (void)huart;
+    if (huart->Instance == UART4)
+    {
+        comm_uart_rx_interrupt();
+    }
 }
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
@@ -269,6 +285,12 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
         // A blocking UART error (typically ORE) aborted the ongoing Receive_IT.
         // Reset the DS18B20 driver so the next cycle can start cleanly.
         ds18b20_uart_error();
+    }
+    if (huart->Instance == UART4)
+    {
+        // An ORE or framing error aborted the ongoing Receive_IT.
+        // Re-arm the single-byte receive so the comm state machine can continue.
+        comm_uart_error();
     }
 }
 

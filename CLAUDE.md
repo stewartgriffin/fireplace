@@ -37,6 +37,7 @@ This is an intelligent controller for a fireplace and house ventilation system. 
 - **I2C**: HD44780 LCD display (via PCF8574 I2C expander), DS3231 RTC
 - **SPI**: MAX6675 thermocouple interface
 - **GPIO**: Flap actuator control (open pin + close pin per flap)
+- **UART4 RS485**: Communication with external display (Waveshare 27479 RS485↔TTL module)
 
 ### Flap GPIO Pin Assignments
 | Flap | Open Pin | Close Pin |
@@ -113,6 +114,13 @@ fireplace.ioc         # STM32CubeMX project configuration
   - I2C3 (PCF8574/HD44780/GUI): `pcf8574_error()` + `hd44780_error()` + `gui_error()` reset chain → `I2C3_Recovery()` → re-init
   - `gui_error()` blanks `display_buffer` to force full redraw on next `gui_main()` call
   - Called from `HAL_I2C_ErrorCallback` in `i2c.c`; `HAL_Delay` safe at priority 5 (TIM1 at priority 0 can preempt)
+- ✅ RS485 comm module (`Components/comm/`) — interrupt-driven protocol with display over UART4
+  - Receives: fireplace enable/disable, ventilation enable/disable, time request
+  - Responds: ACK, NACK, TIME_RESPONSE (7-byte payload with 16-bit year)
+  - Frame: `[SOF=0xAA][MSG_ID][LEN][PAYLOAD][CRC16_H][CRC16_L]`, CRC covers MSG_ID+LEN+PAYLOAD
+  - UART4 on PC10 (TX) / PC11 (RX), AF8, 115200 baud — PA11/PA12 avoided (USB conflict on Nucleo)
+  - Waveshare 27479 RS485↔TTL module: auto-direction, no DE pin needed, galvanic isolated
+  - ORE recovery: `comm_uart_error()` resets parser to SOF and re-arms `HAL_UART_Receive_IT`
 
 ### Planned Features
 - Air quality sensor integration (PM2.5, CO2, or VOC sensors)
@@ -161,6 +169,14 @@ fireplace.ioc         # STM32CubeMX project configuration
   - Safety and efficiency balanced approach
 
 ## Development Notes
+
+### Recent Progress (2026-03-10)
+- ✅ RS485 comm module wired and working with external display
+  - UART4 moved from PA11/PA12 (USB conflict) to PC10/PC11 (AF8)
+  - UART4 NVIC enabled at priority 5 via CubeMX
+  - OVRDIS enabled on UART4 to prevent ORE from killing receive chain
+  - `comm_uart_error()` added for ORE recovery (resets parser + re-arms RX)
+  - Waveshare 27479 confirmed: auto-direction, no DE pin management needed
 
 ### Recent Progress (2026-03-05)
 - ✅ I2C error recovery added for both I2C buses
@@ -231,7 +247,12 @@ All peripheral interrupts use priority 5 to ensure FreeRTOS compatibility:
 - SPI2 (MAX6675): Priority 5
 - I2C2 (DS3231): Priority 5
 - I2C3 (PCF8574/HD44780): Priority 5
+- UART4 (RS485 comm): Priority 5
 - This matches `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`
+
+#### PA11/PA12 USB Conflict on Nucleo-H533RE
+PA11 and PA12 are the USB D−/D+ pins on the Nucleo board and conflict with UART4.
+Use PC10 (UART4_TX, AF8) and PC11 (UART4_RX, AF8) instead.
 
 #### GUI Blinking with Continuous Updates
 The GUI blink system uses a backup/restore pattern to handle continuous data updates:

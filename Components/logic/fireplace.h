@@ -32,6 +32,9 @@ void gpio_expander_i2c_error(void);
 void display_i2c_interrupt(void);
 void thermocouple_spi_interrupt(void);
 void keyboard_adc_interrupt(void);
+void comm_uart_rx_interrupt(void);
+void comm_uart_tx_interrupt(void);
+void comm_uart_error(void);
 
 /* CPP GUARD END */
 #ifdef __cplusplus
