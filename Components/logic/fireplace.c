@@ -584,29 +584,7 @@ void combustion_main(void)
 	combustion_controller_main();
 	combustion_controller_set_exhaust_temperature(max6675_get_temperature(&thermocouple));
 
-	uint8_t fireplac_flap_position = 0;
-	switch(combustion_controller_get_state())
-	{
-		case COMBUSTION_STATE_OFF:
-			fireplac_flap_position = 0;
-			break;
-		case COMBUSTION_STATE_STARTUP:
-			fireplac_flap_position = 100;
-			break;
-		case COMBUSTION_STATE_WORKING:
-			fireplac_flap_position = 100;
-			break;
-		case COMBUSTION_STATE_PROTECTION:
-			fireplac_flap_position = 20;
-			break;
-		case COMBUSTION_STATE_ENDING:
-			fireplac_flap_position = 30;
-			break;
-		case COMBUSTION_STATE_COOL_DOWN:
-			fireplac_flap_position = 0;
-			break;
-	}
-	flap_controller_set_position(&fireplace_flap, fireplac_flap_position);
+	flap_controller_set_position(&fireplace_flap, combustion_controller_get_flap_position());
 }
 
 void comm_uart_error(void)

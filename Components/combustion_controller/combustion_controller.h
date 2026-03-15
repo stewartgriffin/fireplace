@@ -41,6 +41,7 @@ void combustion_controller_set_exhaust_temperature(int32_t input);
 void combustion_controller_startup_requested(void);
 void combustion_controller_end_requested(void);
 combustion_state_t combustion_controller_get_state(void);
+uint8_t combustion_controller_get_flap_position(void);
 
 /* CPP GUARD END */
 #ifdef __cplusplus
