@@ -22,9 +22,12 @@
 #define MSG_VENTILATION_DISABLE 0x04U
 #define MSG_TIME_REQUEST        0x05U
 
+#define MSG_STATUS_REQUEST      0x06U
+
 #define MSG_ACK                 0x81U
 #define MSG_NACK                0x82U
 #define MSG_TIME_RESPONSE       0x83U
+#define MSG_STATUS_RESPONSE     0x84U
 
 /**************************************           DATA TYPES                 ******************************************/
 
@@ -38,6 +41,7 @@ static void     build_frame(comm_data_t *this, uint8_t msg_id, const uint8_t *pa
 static void     queue_ack(comm_data_t *this, uint8_t echoed_msg_id);
 static void     queue_nack(comm_data_t *this, uint8_t echoed_msg_id);
 static void     queue_time_response(comm_data_t *this);
+static void     queue_status_response(comm_data_t *this);
 static void     process_frame(comm_data_t *this);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
@@ -48,7 +52,8 @@ void comm_init(comm_data_t *this,
                void (*on_fireplace_enable)(void),
                void (*on_fireplace_disable)(void),
                void (*on_ventilation_enable)(void),
-               void (*on_ventilation_disable)(void))
+               void (*on_ventilation_disable)(void),
+               void (*get_status)(comm_status_t *status))
 {
     this->uart_transmit          = uart_transmit;
     this->uart_receive           = uart_receive;
@@ -57,6 +62,7 @@ void comm_init(comm_data_t *this,
     this->on_fireplace_disable   = on_fireplace_disable;
     this->on_ventilation_enable  = on_ventilation_enable;
     this->on_ventilation_disable = on_ventilation_disable;
+    this->get_status             = get_status;
 
     this->rx_state       = COMM_RX_SOF;
     this->rx_payload_idx = 0;
@@ -239,6 +245,35 @@ static void queue_time_response(comm_data_t *this)
     this->tx_pending = true;
 }
 
+static void queue_status_response(comm_data_t *this)
+{
+    comm_status_t s;
+    if (this->get_status != NULL)
+    {
+        this->get_status(&s);
+    }
+    else
+    {
+        s.ext_temp         = 0;
+        s.exhaust_temp     = 0;
+        s.vent_pct         = 0;
+        s.fire_pct         = 0;
+        s.combustion_state = 0;
+    }
+
+    uint8_t payload[7];
+    payload[0] = (uint8_t)(((uint16_t)s.ext_temp     >> 8) & 0xFF);
+    payload[1] = (uint8_t)( (uint16_t)s.ext_temp           & 0xFF);
+    payload[2] = (uint8_t)(((uint16_t)s.exhaust_temp >> 8) & 0xFF);
+    payload[3] = (uint8_t)( (uint16_t)s.exhaust_temp       & 0xFF);
+    payload[4] = s.vent_pct;
+    payload[5] = s.fire_pct;
+    payload[6] = s.combustion_state;
+
+    build_frame(this, MSG_STATUS_RESPONSE, payload, 7);
+    this->tx_pending = true;
+}
+
 static void process_frame(comm_data_t *this)
 {
     switch (this->frame_msg_id)
@@ -265,6 +300,10 @@ static void process_frame(comm_data_t *this)
 
         case MSG_TIME_REQUEST:
             queue_time_response(this);
+            break;
+
+        case MSG_STATUS_REQUEST:
+            queue_status_response(this);
             break;
 
         default:

@@ -24,6 +24,18 @@ extern "C" {
 /**************************************           DATA TYPES                 ******************************************/
 
 /**
+ * @brief Status data returned in MSG_STATUS_RESPONSE
+ */
+typedef struct
+{
+    int16_t ext_temp;          ///< External temperature in tenths of °C (DS18B20)
+    int16_t exhaust_temp;      ///< Exhaust/fireplace temperature in tenths of °C (MAX6675)
+    uint8_t vent_pct;          ///< Ventilation flap position (0–100%)
+    uint8_t fire_pct;          ///< Fireplace flap position (0–100%)
+    uint8_t combustion_state;  ///< Combustion controller state (combustion_state_t)
+} comm_status_t;
+
+/**
  * @brief RX frame parser state machine states
  */
 typedef enum
@@ -82,6 +94,12 @@ typedef struct
     /** @brief Called when a valid ventilation disable command is received */
     void (*on_ventilation_disable)(void);
 
+    /**
+     * @brief Fill a comm_status_t with the current system status for MSG_STATUS_RESPONSE
+     * @param status Pointer to status struct to populate
+     */
+    void (*get_status)(comm_status_t *status);
+
     /* Internal state — do not modify directly */
     comm_rx_state_t rx_state;        ///< RX frame parser state
     uint8_t rx_byte;                 ///< Single-byte buffer used with uart_receive
@@ -124,7 +142,8 @@ void comm_init(comm_data_t *this,
                void (*on_fireplace_enable)(void),
                void (*on_fireplace_disable)(void),
                void (*on_ventilation_enable)(void),
-               void (*on_ventilation_disable)(void));
+               void (*on_ventilation_disable)(void),
+               void (*get_status)(comm_status_t *status));
 
 /**
  * @brief Main function — call from the main loop to process received frames

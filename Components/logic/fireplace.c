@@ -120,6 +120,7 @@ void comm_on_fireplace_enable(void);
 void comm_on_fireplace_disable(void);
 void comm_on_ventilation_enable(void);
 void comm_on_ventilation_disable(void);
+void comm_get_status_wrapper(comm_status_t *status);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 void fireplace_init(void)
@@ -170,7 +171,8 @@ void fireplace_init(void)
 			comm_on_fireplace_enable,
 			comm_on_fireplace_disable,
 			comm_on_ventilation_enable,
-			comm_on_ventilation_disable);
+			comm_on_ventilation_disable,
+			comm_get_status_wrapper);
 }
 
 void fireplace_main(void)
@@ -609,6 +611,15 @@ int comm_uart_receive_wrapper(uint8_t *data, uint16_t size)
 time_data_t *comm_get_time_wrapper(void)
 {
 	return ds3231_get_time(&clock);
+}
+
+void comm_get_status_wrapper(comm_status_t *status)
+{
+	status->ext_temp         = (int16_t)ds18b20_get_temperature(&outside_temperature_sensor);
+	status->exhaust_temp     = (int16_t)max6675_get_temperature(&thermocouple) * 10;
+	status->vent_pct         = flap_controller_get_position(&ventilation_flap);
+	status->fire_pct         = flap_controller_get_position(&fireplace_flap);
+	status->combustion_state = (uint8_t)combustion_controller_get_state();
 }
 
 void comm_on_fireplace_enable(void)
