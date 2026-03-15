@@ -58,6 +58,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Components/combustion_controller/combustion_controller.c
     Components/ds18b20/ds18b20.c
     Components/comm/comm.c
+    Components/nvm_manager/nvm_manager.c
 )
 
 # Add include paths
@@ -76,6 +77,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Components/combustion_controller
     Components/ds18b20
     Components/comm
+    Components/nvm_manager
 )
 
 # Add project symbols (macros)

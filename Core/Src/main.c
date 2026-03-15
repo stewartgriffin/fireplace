@@ -21,6 +21,7 @@
 #include "cmsis_os2.h"
 #include "adc.h"
 #include "dcache.h"
+#include "flash.h"
 #include "i2c.h"
 #include "icache.h"
 #include "spi.h"
@@ -106,6 +107,7 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM3_Init();
   MX_USART6_UART_Init();
+  MX_FLASH_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */

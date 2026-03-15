@@ -29,6 +29,7 @@
 #include "ds18b20.h"
 #include "usart.h"
 #include "comm.h"
+#include "nvm_manager.h"
 
 /**************************************           DEFINES                    ******************************************/
 
@@ -77,6 +78,7 @@ daily_schedule_data_t fire_off_ventilation_daily_schedule;
 ds18b20_data_t outside_temperature_sensor;
 
 comm_data_t comm;
+nvm_manager_data_t nvm;
 
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 int thermocouple_spi_send_receive_wrapper(uint8_t * tx_buffer, uint8_t * rx_buffer, uint16_t size);
@@ -110,6 +112,7 @@ void ventilation_flap_set_close_pin(uint8_t state);
 int gui_update_partial_screen_wrapper(const char *buffer, uint16_t position, uint16_t length);
 void combustion_main(void);
 void ventilation_main(void);
+void update_highest_temperature(void);
 int ds18b20_uart_transmit_receive_wrapper(uint8_t *tx, uint8_t *rx, uint16_t size);
 void ds18b20_uart_set_baudrate_wrapper(uint32_t baudrate);
 void ds18b20_uart_interrupt(void);
@@ -163,6 +166,10 @@ void fireplace_init(void)
 	// Initialize DS18B20 temperature sensor on USART6 (single-wire half-duplex)
 	ds18b20_init(&outside_temperature_sensor, ds18b20_uart_transmit_receive_wrapper, ds18b20_uart_set_baudrate_wrapper);
 
+	// Initialize NVM manager
+	nvm.get_time = comm_get_time_wrapper;
+	nvm_manager_init(&nvm);
+
 	// Initialize RS485 communication with display on UART4
 	comm_init(&comm,
 			comm_uart_transmit_wrapper,
@@ -199,7 +206,9 @@ void fireplace_main(void)
 
 	combustion_main();
 	ventilation_main();
+	update_highest_temperature();
 	comm_main(&comm);
+	nvm_manager_main(&nvm);
 
 }
 
@@ -558,6 +567,16 @@ void ds18b20_uart_error(void)
 {
 	outside_temperature_sensor.state = DS18B20_STATE_IDLE;
 	outside_temperature_sensor.last_read_tick = HAL_GetTick();
+}
+
+void update_highest_temperature(void)
+{
+	int16_t current = (int16_t)max6675_get_temperature(&thermocouple);
+	if (current > nvm_manager_get_highest_exhaust_temperature())
+	{
+		nvm_manager_set_highest_exhaust_temperature(current);
+	}
+	gui_set_highest_temperature(nvm_manager_get_highest_exhaust_temperature());
 }
 
 void combustion_main(void)

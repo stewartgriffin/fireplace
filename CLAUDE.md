@@ -115,12 +115,13 @@ fireplace.ioc         # STM32CubeMX project configuration
   - `gui_error()` blanks `display_buffer` to force full redraw on next `gui_main()` call
   - Called from `HAL_I2C_ErrorCallback` in `i2c.c`; `HAL_Delay` safe at priority 5 (TIM1 at priority 0 can preempt)
 - ✅ RS485 comm module (`Components/comm/`) — interrupt-driven protocol with display over UART4
-  - Receives: fireplace enable/disable, ventilation enable/disable, time request
-  - Responds: ACK, NACK, TIME_RESPONSE (7-byte payload with 16-bit year)
+  - Receives: fireplace enable/disable, ventilation enable/disable, time request, status request
+  - Responds: ACK, NACK, TIME_RESPONSE (7-byte: 16-bit year BE + month/day/hour/min/sec), STATUS_RESPONSE (7-byte: ext_temp int16 BE tenths-°C, exhaust_temp int16 BE tenths-°C, vent_pct, fire_pct, combustion_state)
   - Frame: `[SOF=0xAA][MSG_ID][LEN][PAYLOAD][CRC16_H][CRC16_L]`, CRC covers MSG_ID+LEN+PAYLOAD
   - UART4 on PC10 (TX) / PC11 (RX), AF8, 115200 baud — PA11/PA12 avoided (USB conflict on Nucleo)
   - Waveshare 27479 RS485↔TTL module: auto-direction, no DE pin needed, galvanic isolated
   - ORE recovery: `comm_uart_error()` resets parser to SOF and re-arms `HAL_UART_Receive_IT`
+  - `comm_status_t` struct in `comm.h`; `get_status` callback populated by `comm_get_status_wrapper()` in fireplace.c
 
 ### Planned Features
 - Air quality sensor integration (PM2.5, CO2, or VOC sensors)
@@ -169,6 +170,12 @@ fireplace.ioc         # STM32CubeMX project configuration
   - Safety and efficiency balanced approach
 
 ## Development Notes
+
+### Recent Progress (2026-03-15)
+- ✅ RS485 status response added (`MSG_STATUS_REQUEST 0x06` / `MSG_STATUS_RESPONSE 0x84`)
+  - 7-byte payload: ext_temp (int16 BE, tenths-°C), exhaust_temp (int16 BE, tenths-°C), vent_pct, fire_pct, combustion_state
+  - DS18B20 value sent as-is (already tenths); MAX6675 whole-°C multiplied by 10
+  - `comm_status_t` struct added to `comm.h`; `get_status` function pointer added to `comm_data_t` and `comm_init`
 
 ### Recent Progress (2026-03-10)
 - ✅ RS485 comm module wired and working with external display

@@ -113,6 +113,12 @@ void gui_set_external_temperature(int16_t value);
 void gui_set_fireplace_temperature(uint8_t value);
 
 /**
+ * @brief Update highest recorded exhaust temperature display
+ * @param value Highest exhaust temperature in degrees Celsius
+ */
+void gui_set_highest_temperature(int16_t value);
+
+/**
  * @brief Get pointer to screen buffer for display output
  * @return Pointer to screen buffer string (rows * columns bytes)
  */

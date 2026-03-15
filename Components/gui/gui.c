@@ -20,6 +20,7 @@
 #define TEMP_POS           17   // Kom t: XXX (position for XXX)
 #define VENTILATION_POS    24   // W%: XXX (position for XXX)
 #define PPM_POS            36   // Zew t:XX.X (position for first char of 4-char field)
+#define HIGHEST_TEMP_POS   57   // najw: XXX (position for 3-char number, label starts at 51)
 #define TIME_POS           60   // HH:MM:SS (position for HH)
 #define DATE_POS           72   // DD.MM.YY (position for DD)
 
@@ -41,7 +42,7 @@ typedef enum
 /*
 "K%: XXX  Kom t:  XXX"
 "W%: XXX  Zew t: XX.X"  <- Zew t: field is 4 chars with decimal (tenths of degC)
-"                    "
+"           najw: XXX"  <- right-justified highest exhaust temperature
 "22:33:44    12.03.25";
 */
 
@@ -68,9 +69,9 @@ char screen_buffer[81] =  // 80 chars + null terminator for safe snprintf
 	// Line 2: "W%:      Zew t:    "
 	'W', '%', ':', ' ', ' ', ' ', ' ', ' ', ' ', 'Z',
 	'e', 'w', ' ', 't', ':', ' ', ' ', ' ', ' ', ' ',
-	// Line 3: "                    "
+	// Line 3: "           najw:    "
 	' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-	' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+	' ', 'n', 'a', 'j', 'w', ':', ' ', ' ', ' ', ' ',
 	// Line 4: "  :  :        .  .  "
 	' ', ' ', ':', ' ', ' ', ':', ' ', ' ', ' ', ' ',
 	' ', ' ', ' ', ' ', '.', ' ', ' ', '.', ' ', ' ',
@@ -80,6 +81,7 @@ char screen_buffer[81] =  // 80 chars + null terminator for safe snprintf
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
 static void format_2digit(char *buffer, uint8_t value);
 static void format_3digit_right_justified(char *buffer, uint8_t value);
+static void format_3digit_right_justified_i16(char *buffer, int16_t value);
 static void format_4digit_signed_tenths(char *buffer, int16_t tenths);
 static uint8_t get_focus_position(gui_focus_t focus);
 static void apply_blink_state(void);
@@ -322,6 +324,12 @@ void gui_set_fireplace_temperature(uint8_t value)
 	format_3digit_right_justified(&screen_buffer[TEMP_POS], value);
 }
 
+void gui_set_highest_temperature(int16_t value)
+{
+	// Update najw: XXX at position HIGHEST_TEMP_POS (right justified in 3 chars)
+	format_3digit_right_justified_i16(&screen_buffer[HIGHEST_TEMP_POS], value);
+}
+
 char * gui_get_screen_buffer(void)
 {
 	return screen_buffer;
@@ -410,6 +418,32 @@ static void format_3digit_right_justified(char *buffer, uint8_t value)
 		buffer[0] = ' ';
 		buffer[1] = ' ';
 		buffer[2] = '0' + value;
+	}
+}
+
+static void format_3digit_right_justified_i16(char *buffer, int16_t value)
+{
+	// Clamp to displayable range 0-999
+	if (value < 0)   value = 0;
+	if (value > 999) value = 999;
+	uint16_t v = (uint16_t)value;
+	if (v >= 100)
+	{
+		buffer[0] = '0' + (v / 100);
+		buffer[1] = '0' + ((v / 10) % 10);
+		buffer[2] = '0' + (v % 10);
+	}
+	else if (v >= 10)
+	{
+		buffer[0] = ' ';
+		buffer[1] = '0' + (v / 10);
+		buffer[2] = '0' + (v % 10);
+	}
+	else
+	{
+		buffer[0] = ' ';
+		buffer[1] = ' ';
+		buffer[2] = '0' + v;
 	}
 }
 
