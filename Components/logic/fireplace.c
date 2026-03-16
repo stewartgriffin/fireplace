@@ -124,6 +124,7 @@ void comm_on_fireplace_disable(void);
 void comm_on_ventilation_enable(void);
 void comm_on_ventilation_disable(void);
 void comm_get_status_wrapper(comm_status_t *status);
+void comm_get_dTdt_wrapper(comm_dTdt_t *dTdt);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 void fireplace_init(void)
@@ -179,7 +180,8 @@ void fireplace_init(void)
 			comm_on_fireplace_disable,
 			comm_on_ventilation_enable,
 			comm_on_ventilation_disable,
-			comm_get_status_wrapper);
+			comm_get_status_wrapper,
+			comm_get_dTdt_wrapper);
 }
 
 void fireplace_main(void)
@@ -608,6 +610,16 @@ int comm_uart_receive_wrapper(uint8_t *data, uint16_t size)
 time_data_t *comm_get_time_wrapper(void)
 {
 	return ds3231_get_time(&clock);
+}
+
+void comm_get_dTdt_wrapper(comm_dTdt_t *dTdt)
+{
+	dTdt->dTdt_10s        = combustion_controller_get_dTdt_10s();
+	dTdt->dTdt_20s        = combustion_controller_get_dTdt_20s();
+	dTdt->dTdt_30s        = combustion_controller_get_dTdt_30s();
+	dTdt->sliding_max_10s = combustion_controller_get_sliding_max_dTdt_10s();
+	dTdt->sliding_max_20s = combustion_controller_get_sliding_max_dTdt_20s();
+	dTdt->sliding_max_30s = combustion_controller_get_sliding_max_dTdt_30s();
 }
 
 void comm_get_status_wrapper(comm_status_t *status)

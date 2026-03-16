@@ -43,6 +43,18 @@ void combustion_controller_end_requested(void);
 combustion_state_t combustion_controller_get_state(void);
 uint8_t combustion_controller_get_flap_position(void);
 
+int16_t combustion_controller_get_dTdt_10s(void);
+int16_t combustion_controller_get_dTdt_20s(void);
+int16_t combustion_controller_get_dTdt_30s(void);
+
+int16_t combustion_controller_get_sliding_max_dTdt_10s(void);
+int16_t combustion_controller_get_sliding_max_dTdt_20s(void);
+int16_t combustion_controller_get_sliding_max_dTdt_30s(void);
+
+int16_t combustion_controller_get_session_max_dTdt_10s(void);
+int16_t combustion_controller_get_session_max_dTdt_20s(void);
+int16_t combustion_controller_get_session_max_dTdt_30s(void);
+
 /* CPP GUARD END */
 #ifdef __cplusplus
 }

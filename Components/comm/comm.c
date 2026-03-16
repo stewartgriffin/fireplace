@@ -23,11 +23,13 @@
 #define MSG_TIME_REQUEST        0x05U
 
 #define MSG_STATUS_REQUEST      0x06U
+#define MSG_DTDT_REQUEST        0x07U
 
 #define MSG_ACK                 0x81U
 #define MSG_NACK                0x82U
 #define MSG_TIME_RESPONSE       0x83U
 #define MSG_STATUS_RESPONSE     0x84U
+#define MSG_DTDT_RESPONSE       0x85U
 
 /**************************************           DATA TYPES                 ******************************************/
 
@@ -42,6 +44,7 @@ static void     queue_ack(comm_data_t *this, uint8_t echoed_msg_id);
 static void     queue_nack(comm_data_t *this, uint8_t echoed_msg_id);
 static void     queue_time_response(comm_data_t *this);
 static void     queue_status_response(comm_data_t *this);
+static void     queue_dTdt_response(comm_data_t *this);
 static void     process_frame(comm_data_t *this);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
@@ -53,7 +56,8 @@ void comm_init(comm_data_t *this,
                void (*on_fireplace_disable)(void),
                void (*on_ventilation_enable)(void),
                void (*on_ventilation_disable)(void),
-               void (*get_status)(comm_status_t *status))
+               void (*get_status)(comm_status_t *status),
+               void (*get_dTdt)(comm_dTdt_t *dTdt))
 {
     this->uart_transmit          = uart_transmit;
     this->uart_receive           = uart_receive;
@@ -63,6 +67,7 @@ void comm_init(comm_data_t *this,
     this->on_ventilation_enable  = on_ventilation_enable;
     this->on_ventilation_disable = on_ventilation_disable;
     this->get_status             = get_status;
+    this->get_dTdt               = get_dTdt;
 
     this->rx_state       = COMM_RX_SOF;
     this->rx_payload_idx = 0;
@@ -199,7 +204,7 @@ static void build_frame(comm_data_t *this, uint8_t msg_id, const uint8_t *payloa
         memcpy(&this->tx_buffer[3], payload, len);
     }
 
-    uint8_t crc_buf[2 + 8];
+    uint8_t crc_buf[2 + 12];
     crc_buf[0] = msg_id;
     crc_buf[1] = len;
     if (len > 0 && payload != NULL)
@@ -274,6 +279,41 @@ static void queue_status_response(comm_data_t *this)
     this->tx_pending = true;
 }
 
+static void queue_dTdt_response(comm_data_t *this)
+{
+    comm_dTdt_t d;
+    if (this->get_dTdt != NULL)
+    {
+        this->get_dTdt(&d);
+    }
+    else
+    {
+        d.dTdt_10s        = 0;
+        d.dTdt_20s        = 0;
+        d.dTdt_30s        = 0;
+        d.sliding_max_10s = 0;
+        d.sliding_max_20s = 0;
+        d.sliding_max_30s = 0;
+    }
+
+    uint8_t payload[12];
+    payload[0]  = (uint8_t)(((uint16_t)d.dTdt_10s        >> 8) & 0xFF);
+    payload[1]  = (uint8_t)( (uint16_t)d.dTdt_10s              & 0xFF);
+    payload[2]  = (uint8_t)(((uint16_t)d.dTdt_20s        >> 8) & 0xFF);
+    payload[3]  = (uint8_t)( (uint16_t)d.dTdt_20s              & 0xFF);
+    payload[4]  = (uint8_t)(((uint16_t)d.dTdt_30s        >> 8) & 0xFF);
+    payload[5]  = (uint8_t)( (uint16_t)d.dTdt_30s              & 0xFF);
+    payload[6]  = (uint8_t)(((uint16_t)d.sliding_max_10s >> 8) & 0xFF);
+    payload[7]  = (uint8_t)( (uint16_t)d.sliding_max_10s       & 0xFF);
+    payload[8]  = (uint8_t)(((uint16_t)d.sliding_max_20s >> 8) & 0xFF);
+    payload[9]  = (uint8_t)( (uint16_t)d.sliding_max_20s       & 0xFF);
+    payload[10] = (uint8_t)(((uint16_t)d.sliding_max_30s >> 8) & 0xFF);
+    payload[11] = (uint8_t)( (uint16_t)d.sliding_max_30s       & 0xFF);
+
+    build_frame(this, MSG_DTDT_RESPONSE, payload, 12);
+    this->tx_pending = true;
+}
+
 static void process_frame(comm_data_t *this)
 {
     switch (this->frame_msg_id)
@@ -304,6 +344,10 @@ static void process_frame(comm_data_t *this)
 
         case MSG_STATUS_REQUEST:
             queue_status_response(this);
+            break;
+
+        case MSG_DTDT_REQUEST:
+            queue_dTdt_response(this);
             break;
 
         default:

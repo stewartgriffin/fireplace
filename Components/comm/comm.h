@@ -36,6 +36,19 @@ typedef struct
 } comm_status_t;
 
 /**
+ * @brief Temperature derivative data returned in MSG_DTDT_RESPONSE
+ */
+typedef struct
+{
+    int16_t dTdt_10s;           ///< Current dT/dt over 10 s window (°C/min)
+    int16_t dTdt_20s;           ///< Current dT/dt over 20 s window (°C/min)
+    int16_t dTdt_30s;           ///< Current dT/dt over 30 s window (°C/min)
+    int16_t sliding_max_10s;    ///< Sliding max dT/dt over 10 s window (°C/min)
+    int16_t sliding_max_20s;    ///< Sliding max dT/dt over 20 s window (°C/min)
+    int16_t sliding_max_30s;    ///< Sliding max dT/dt over 30 s window (°C/min)
+} comm_dTdt_t;
+
+/**
  * @brief RX frame parser state machine states
  */
 typedef enum
@@ -100,6 +113,12 @@ typedef struct
      */
     void (*get_status)(comm_status_t *status);
 
+    /**
+     * @brief Fill a comm_dTdt_t with current dT/dt values for MSG_DTDT_RESPONSE
+     * @param dTdt Pointer to dTdt struct to populate
+     */
+    void (*get_dTdt)(comm_dTdt_t *dTdt);
+
     /* Internal state — do not modify directly */
     comm_rx_state_t rx_state;        ///< RX frame parser state
     uint8_t rx_byte;                 ///< Single-byte buffer used with uart_receive
@@ -116,7 +135,7 @@ typedef struct
 
     bool    tx_in_progress;          ///< UART TX transfer is currently active
     bool    tx_pending;              ///< A frame is queued and waiting to be sent
-    uint8_t tx_buffer[13];           ///< TX frame buffer (5 overhead + 8 max payload)
+    uint8_t tx_buffer[17];           ///< TX frame buffer (5 overhead + 12 max payload)
     uint8_t tx_size;                 ///< Number of bytes in tx_buffer to transmit
 } comm_data_t;
 
@@ -143,7 +162,8 @@ void comm_init(comm_data_t *this,
                void (*on_fireplace_disable)(void),
                void (*on_ventilation_enable)(void),
                void (*on_ventilation_disable)(void),
-               void (*get_status)(comm_status_t *status));
+               void (*get_status)(comm_status_t *status),
+               void (*get_dTdt)(comm_dTdt_t *dTdt));
 
 /**
  * @brief Main function — call from the main loop to process received frames
