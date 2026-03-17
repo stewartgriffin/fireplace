@@ -125,10 +125,13 @@ void comm_on_ventilation_enable(void);
 void comm_on_ventilation_disable(void);
 void comm_get_status_wrapper(comm_status_t *status);
 void comm_get_dTdt_wrapper(comm_dTdt_t *dTdt);
+void fireplace_flap_swipe_open_wrapper(void);
+void fireplace_flap_swipe_close_wrapper(void);
+void fireplace_flap_set_position_wrapper(uint8_t position);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
 void fireplace_init(void)
-{	combustion_controller_init();
+{	combustion_controller_init(fireplace_flap_swipe_open_wrapper, fireplace_flap_swipe_close_wrapper, fireplace_flap_set_position_wrapper);
 
 	
 	max6675_init(&thermocouple, thermocouple_spi_send_receive_wrapper);
@@ -585,8 +588,6 @@ void combustion_main(void)
 {
 	combustion_controller_main();
 	combustion_controller_set_exhaust_temperature(max6675_get_temperature(&thermocouple));
-
-	flap_controller_set_position(&fireplace_flap, combustion_controller_get_flap_position());
 }
 
 void comm_uart_error(void)
@@ -651,6 +652,21 @@ void comm_on_ventilation_disable(void)
 	/* do nothing */
 }
 
+void fireplace_flap_swipe_open_wrapper(void)
+{
+	flap_controller_swipe_open(&fireplace_flap);
+}
+
+void fireplace_flap_swipe_close_wrapper(void)
+{
+	flap_controller_swipe_close(&fireplace_flap);
+}
+
+void fireplace_flap_set_position_wrapper(uint8_t position)
+{
+	flap_controller_set_position(&fireplace_flap, position);
+}
+
 void ventilation_main(void)
 {
 	if (ds18b20_get_temperature(&outside_temperature_sensor) >= 180)
@@ -702,8 +718,7 @@ void ventilation_main(void)
 	daily_schedule_result_t ventilation;
 
 	if ((combustion_controller_get_state() == COMBUSTION_STATE_STARTUP) ||
-		(combustion_controller_get_state() == COMBUSTION_STATE_WORKING) ||
-		(combustion_controller_get_state() == COMBUSTION_STATE_PROTECTION))
+		(combustion_controller_get_state() == COMBUSTION_STATE_WORKING))
 	{
 		ventilation = daily_schedule_get(&fire_on_ventilation_daily_schedule);
 		if (ventilation.enable)

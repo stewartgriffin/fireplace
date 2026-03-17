@@ -492,15 +492,18 @@ void ds3231_resume_time_read(ds3231_data_t * this)
 
 void ds3231_error(ds3231_data_t * this)
 {
-	this->state = DS3231_STATE_IDLE;
 	this->time_read_in_progress = false;
-	this->status_read_in_progress = false;
+	this->status_read_in_progress = true;  // Status read initiated below
 	this->time_update_waiting_for_interrupt = false;
 	this->alarm1_update_waiting_for_interrupt = false;
 	this->alarm2_update_waiting_for_interrupt = false;
 	this->alarm1_read_in_progress = false;
 	this->alarm2_read_in_progress = false;
 	this->osf_clear_pending = false;
+
+	// Re-enter PREINIT so the OSF check runs again after I2C recovery
+	this->state = DS3231_STATE_PREINIT;
+	this->i2c_read(DS3231_STATUS_START_ADDRESS, this->rx_buffer, DS3231_STATUS_LENGTH);
 }
 
 /**************************************      LOCAL FUNCTION DEFINITIONS      ******************************************/

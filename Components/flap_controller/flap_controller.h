@@ -66,6 +66,14 @@ typedef struct {
     flap_state_t state;
     uint32_t motion_start_tick;
     uint32_t motion_duration_ms;
+
+    // Position validity — false after a swipe; restored when an end stop is reached
+    bool position_valid;
+
+    // Recalibration: when position is unknown and a non-end-stop target is requested,
+    // the flap is first driven to 100% to establish a known position, then to pending_target.
+    bool    recalibrating;
+    uint8_t pending_target;
 } flap_controller_data_t;
 
 /**************************************           DEFINES                    ******************************************/
@@ -73,6 +81,9 @@ typedef struct {
 /** Default travel times if not specified */
 #define FLAP_DEFAULT_OPEN_TRAVEL_TIME_MS  4500U
 #define FLAP_DEFAULT_CLOSE_TRAVEL_TIME_MS 6000U
+
+/** Duration of a single swipe pulse in milliseconds */
+#define FLAP_SWIPE_DURATION_MS 100U
 
 /**************************************    GLOBAL FUNCTION DECLARATIONS      ******************************************/
 
@@ -111,6 +122,22 @@ void flap_controller_set_position(flap_controller_data_t *data, uint8_t position
  * @return Position in percentage (0-100)
  */
 uint8_t flap_controller_get_position(flap_controller_data_t *data);
+
+/**
+ * @brief Pulse the flap in the open direction for FLAP_SWIPE_DURATION_MS (100 ms).
+ * Marks position as unknown; the next set_position call with a non-end-stop target
+ * will recalibrate by driving to 100% first.
+ * @param data Pointer to flap controller data structure
+ */
+void flap_controller_swipe_open(flap_controller_data_t *data);
+
+/**
+ * @brief Pulse the flap in the close direction for FLAP_SWIPE_DURATION_MS (100 ms).
+ * Marks position as unknown; the next set_position call with a non-end-stop target
+ * will recalibrate by driving to 100% first.
+ * @param data Pointer to flap controller data structure
+ */
+void flap_controller_swipe_close(flap_controller_data_t *data);
 
 /* CPP GUARD END */
 #ifdef __cplusplus

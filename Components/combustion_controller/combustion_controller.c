@@ -17,14 +17,19 @@
 #define WORKING_ENTER_THRESHOLD_TEMP 80
 #define ENDING_ENTER_THRESHOLD_TEMP 70
 #define COOL_DOWN_ENTER_THRESHOLD_TEMP 50
-#define PROTECTION_ENTER_THRESHOLD_TEMP 120
-#define PROTECTION_MAX_ALLOWED_TEMP     130
 
 #define HYSTERESIS 7
 
 #define STARTUP_GRACE_PERIOD_MS       (30U * 60U * 1000U)
 #define END_DELAY_MS                  (90U * 60U * 1000U)
-#define PROTECTION_FLAP_UPDATE_MS     (60U * 1000U)
+
+#define DRAFT_SUPPRESSION_DTDT_THRESHOLD  9
+#define DRAFT_SUPPRESSION_TEMP_THRESHOLD  80
+#define DRAFT_SUPPRESSION_DURATION_MS     (2U * 60U * 1000U)
+
+#define WORKING_TARGET_TEMP               120
+#define WORKING_SESSION_RESET_TEMP        113
+#define WORKING_ADJUST_INTERVAL_MS        (30U * 1000U)
 
 #define TEMP_BUFFER_SIZE              300
 
@@ -33,76 +38,47 @@
 /**************************************           CONSTANTS                  ******************************************/
 
 /**************************************           LOCAL VARIABLES            ******************************************/
-static int32_t temperature;
-static combustion_state_t state;
-static bool startup_requested;
-static bool end_requested;
-static uint32_t startup_tick;
-static uint32_t end_tick;
-static uint8_t  protection_flap;
-static uint32_t protection_flap_tick;
+static int32_t temperature          = 0;
+static combustion_state_t state     = COMBUSTION_STATE_OFF;
+static bool startup_requested       = false;
+static bool end_requested           = false;
+static uint32_t startup_tick        = 0;
+static uint32_t end_tick            = 0;
 
-static int16_t  temp_buf[TEMP_BUFFER_SIZE];
-static int      buf_head;
-static uint32_t last_sample_tick;
-static bool     buf_primed;
-static int16_t  session_max_10s;
-static int16_t  session_max_20s;
-static int16_t  session_max_30s;
+static int16_t  temp_buf[TEMP_BUFFER_SIZE] = {0};
+static int      buf_head            = 0;
+static uint32_t last_sample_tick;   // set to HAL_GetTick() in init
+static bool     buf_primed          = false;
+static int16_t  session_max_10s     = 0;
+static int16_t  session_max_20s     = 0;
+static int16_t  session_max_30s     = 0;
+
+static bool     draft_suppression_active = false;
+static uint32_t draft_suppression_tick   = 0U;
+
+static void (*swipe_open_cb)(void);
+static void (*swipe_close_cb)(void);
+static void (*set_flap_position_cb)(uint8_t);
+static uint32_t working_adjust_tick    = 0U;
+static bool     working_session_active = false;
 
 /**************************************      LOCAL FUNCTION DECLARATIONS     ******************************************/
-static uint8_t calc_protection_flap(void);
 static int16_t calc_dTdt(int window);
 static int16_t calc_sliding_max_dTdt(int window);
+static void    sample_temperature(void);
 
 /**************************************      GLOBAL FUNCTION DEFINITIONS     ******************************************/
-void combustion_controller_init(void)
+void combustion_controller_init(void (*swipe_open)(void), void (*swipe_close)(void), void (*set_flap_position)(uint8_t))
 {
-    temperature = 0;
-    state = COMBUSTION_STATE_OFF;
-    startup_requested = false;
-    end_requested = false;
-    startup_tick = 0;
-    end_tick = 0;
-    protection_flap = 100U;
-    protection_flap_tick = 0U;
-
-    buf_head = 0;
-    last_sample_tick = HAL_GetTick();
-    buf_primed = false;
-    session_max_10s = 0;
-    session_max_20s = 0;
-    session_max_30s = 0;
+    swipe_open_cb        = swipe_open;
+    swipe_close_cb       = swipe_close;
+    set_flap_position_cb = set_flap_position;
+    last_sample_tick     = HAL_GetTick();
 }
 
 void combustion_controller_main(void)
 {
-    // Sample exhaust temperature into circular buffer once per second
-    if (HAL_GetTick() - last_sample_tick >= 1000U)
-    {
-        last_sample_tick += 1000U;
-        if (!buf_primed)
-        {
-            if (temperature != 0)
-            {
-                for (int i = 0; i < TEMP_BUFFER_SIZE; i++)
-                    temp_buf[i] = (int16_t)temperature;
-                buf_head = 0;
-                buf_primed = true;
-            }
-        }
-        else
-        {
-            temp_buf[buf_head] = (int16_t)temperature;
-            buf_head = (buf_head + 1) % TEMP_BUFFER_SIZE;
-            int16_t dt10 = calc_dTdt(10);
-            int16_t dt20 = calc_dTdt(20);
-            int16_t dt30 = calc_dTdt(30);
-            if (dt10 > session_max_10s) session_max_10s = dt10;
-            if (dt20 > session_max_20s) session_max_20s = dt20;
-            if (dt30 > session_max_30s) session_max_30s = dt30;
-        }
-    }
+    sample_temperature();
 
     // Process flags first - applies from any state
     if (startup_requested)
@@ -119,28 +95,6 @@ void combustion_controller_main(void)
         end_tick = HAL_GetTick();
     }
 
-    if (state == COMBUSTION_STATE_PROTECTION)
-    {
-        if (temperature < PROTECTION_ENTER_THRESHOLD_TEMP - HYSTERESIS)
-        {
-            state = COMBUSTION_STATE_WORKING;
-        }
-        else if (protection_flap_tick == 0U || (HAL_GetTick() - protection_flap_tick) >= PROTECTION_FLAP_UPDATE_MS)
-        {
-            protection_flap = calc_protection_flap();
-            protection_flap_tick = HAL_GetTick();
-        }
-        return;
-    }
-
-    // Protection threshold overrides any state
-    if (temperature > PROTECTION_ENTER_THRESHOLD_TEMP)
-    {
-        state = COMBUSTION_STATE_PROTECTION;
-        protection_flap_tick = 0U;
-        return;
-    }
-
     // Compute startup grace status
     bool startup_grace_active = (startup_tick != 0) && ((HAL_GetTick() - startup_tick) < STARTUP_GRACE_PERIOD_MS);
 
@@ -149,7 +103,9 @@ void combustion_controller_main(void)
     {
         if (state == COMBUSTION_STATE_STARTUP || state == COMBUSTION_STATE_WORKING)
         {
-            startup_tick = 0;
+            startup_tick             = 0;
+            draft_suppression_active = false;
+            working_session_active   = false;
             state = COMBUSTION_STATE_ENDING;
         }
     }
@@ -161,12 +117,15 @@ void combustion_controller_main(void)
             startup_tick = HAL_GetTick();
             state = COMBUSTION_STATE_STARTUP;
         }
+        if (set_flap_position_cb != NULL) { set_flap_position_cb(0); }
     }
     else if (state == COMBUSTION_STATE_STARTUP)
     {
         if (temperature > WORKING_ENTER_THRESHOLD_TEMP)
         {
-            startup_tick = 0;
+            startup_tick           = 0;
+            working_adjust_tick    = 0U;
+            working_session_active = false;
             state = COMBUSTION_STATE_WORKING;
         }
         else if (!startup_grace_active && temperature < STARTUP_ENTER_THRESHOLD_TEMP - HYSTERESIS)
@@ -174,11 +133,71 @@ void combustion_controller_main(void)
             startup_tick = 0;
             state = COMBUSTION_STATE_OFF;
         }
+        if (set_flap_position_cb != NULL) { set_flap_position_cb(100); }
     }
     else if (state == COMBUSTION_STATE_WORKING)
     {
+        // Expire draft suppression after 2 minutes; reopen flap to resume normal operation
+        if (draft_suppression_active &&
+            (HAL_GetTick() - draft_suppression_tick) >= DRAFT_SUPPRESSION_DURATION_MS)
+        {
+            draft_suppression_active = false;
+            // Session active: issue a swipe_open to start recovering; pre-session case is handled
+            // by set_flap_position_cb(100) being called each cycle until the first 120°C crossing.
+            if (working_session_active && swipe_open_cb != NULL) { swipe_open_cb(); }
+            working_adjust_tick = HAL_GetTick();
+        }
+
+        // Session reset: temperature fell back below 105°C — flap back to 100%
+        if (temperature < WORKING_SESSION_RESET_TEMP)
+        {
+            working_session_active = false;
+        }
+
+        // Draft suppression: close flap for 2 min when dT/dt 20s >= 9 °C/min and temp > 80°C
+        if (!draft_suppression_active &&
+            calc_dTdt(20) >= DRAFT_SUPPRESSION_DTDT_THRESHOLD &&
+            temperature > DRAFT_SUPPRESSION_TEMP_THRESHOLD)
+        {
+            draft_suppression_active = true;
+            draft_suppression_tick   = HAL_GetTick();
+        }
+
+        // 120°C crossing: close flap for 30s then balance every 30s
+        if (!working_session_active && temperature >= WORKING_TARGET_TEMP)
+        {
+            working_session_active = true;
+            working_adjust_tick    = HAL_GetTick();
+            if (swipe_close_cb != NULL) { swipe_close_cb(); }
+        }
+        // 30-second adjustment — only active once balance mode is running
+        else if (working_session_active &&
+                 (HAL_GetTick() - working_adjust_tick) >= WORKING_ADJUST_INTERVAL_MS)
+        {
+            working_adjust_tick = HAL_GetTick();
+            if (temperature > WORKING_TARGET_TEMP)
+            {
+                if (swipe_close_cb != NULL) { swipe_close_cb(); }
+            }
+            else if (temperature < WORKING_TARGET_TEMP)
+            {
+                if (swipe_open_cb != NULL) { swipe_open_cb(); }
+            }
+        }
+
+        if (draft_suppression_active)
+        {
+            if (set_flap_position_cb != NULL) { set_flap_position_cb(0); }
+        }
+        else if (!working_session_active)
+        {
+            if (set_flap_position_cb != NULL) { set_flap_position_cb(100); }
+        }
+
         if (temperature < ENDING_ENTER_THRESHOLD_TEMP)
         {
+            draft_suppression_active = false;
+            working_session_active   = false;
             state = COMBUSTION_STATE_ENDING;
         }
     }
@@ -200,6 +219,7 @@ void combustion_controller_main(void)
         {
             state = COMBUSTION_STATE_WORKING;
         }
+        if (set_flap_position_cb != NULL) { set_flap_position_cb(30); }
     }
     else if (state == COMBUSTION_STATE_COOL_DOWN)
     {
@@ -211,6 +231,7 @@ void combustion_controller_main(void)
         {
             state = COMBUSTION_STATE_ENDING;
         }
+        if (set_flap_position_cb != NULL) { set_flap_position_cb(0); }
     }
 }
 
@@ -237,19 +258,6 @@ combustion_state_t combustion_controller_get_state(void)
     return state;
 }
 
-uint8_t combustion_controller_get_flap_position(void)
-{
-    switch (state)
-    {
-        case COMBUSTION_STATE_OFF:       return 0;
-        case COMBUSTION_STATE_STARTUP:   return 100;
-        case COMBUSTION_STATE_WORKING:   return 100;
-        case COMBUSTION_STATE_ENDING:    return 30;
-        case COMBUSTION_STATE_COOL_DOWN: return 0;
-        case COMBUSTION_STATE_PROTECTION: return protection_flap;
-        default: return 0;
-    }
-}
 
 int16_t combustion_controller_get_dTdt_10s(void)
 {
@@ -298,6 +306,39 @@ int16_t combustion_controller_get_session_max_dTdt_30s(void)
 
 /**************************************      LOCAL FUNCTION DEFINITIONS      ******************************************/
 
+/* Sample exhaust temperature into the circular buffer once per second.
+ * On first valid reading, primes the buffer with the current temperature.
+ * Updates session-maximum dTdt values each second. */
+static void sample_temperature(void)
+{
+    if (HAL_GetTick() - last_sample_tick < 1000U)
+        return;
+
+    last_sample_tick += 1000U;
+
+    if (!buf_primed)
+    {
+        if (temperature != 0)
+        {
+            for (int i = 0; i < TEMP_BUFFER_SIZE; i++)
+                temp_buf[i] = (int16_t)temperature;
+            buf_head = 0;
+            buf_primed = true;
+        }
+        return;
+    }
+
+    temp_buf[buf_head] = (int16_t)temperature;
+    buf_head = (buf_head + 1) % TEMP_BUFFER_SIZE;
+
+    int16_t dt10 = calc_dTdt(10);
+    int16_t dt20 = calc_dTdt(20);
+    int16_t dt30 = calc_dTdt(30);
+    if (dt10 > session_max_10s) session_max_10s = dt10;
+    if (dt20 > session_max_20s) session_max_20s = dt20;
+    if (dt30 > session_max_30s) session_max_30s = dt30;
+}
+
 /* Derivative of temperature over `window` seconds, in °C/min.
  * Uses the circular buffer: newest sample vs. the sample `window` seconds ago.
  * Returns 0 if the buffer has not been primed yet. */
@@ -330,23 +371,3 @@ static int16_t calc_sliding_max_dTdt(int window)
     return max_val;
 }
 
-/* Linear interpolation: PROTECTION_ENTER_THRESHOLD_TEMP -> 100%, PROTECTION_MAX_ALLOWED_TEMP -> 20%.
- * Result rounded to the nearest 10%. */
-static uint8_t calc_protection_flap(void)
-{
-    int32_t flap;
-    if (temperature <= PROTECTION_ENTER_THRESHOLD_TEMP)
-    {
-        flap = 100;
-    }
-    else if (temperature >= PROTECTION_MAX_ALLOWED_TEMP)
-    {
-        flap = 20;
-    }
-    else
-    {
-        int32_t range = PROTECTION_MAX_ALLOWED_TEMP - PROTECTION_ENTER_THRESHOLD_TEMP;
-        flap = 100 - ((temperature - PROTECTION_ENTER_THRESHOLD_TEMP) * 80) / range;
-    }
-    return (uint8_t)(((flap + 5) / 10) * 10);
-}

@@ -30,7 +30,7 @@ An intelligent controller for a wood-burning fireplace and house ventilation sys
 The 4×20 HD44780 display shows real-time system status. All fields update continuously; time and date fields blink when in edit mode.
 
 <p align="center">
-  <img src="docs/lcd_screen.svg" alt="HD44780 4×20 LCD screen" width="520"/>
+  <img src="docs/lcd_screen.svg" alt="HD44780 4×20 LCD screen" width="485"/>
 </p>
 
 | Field | Label | Description |

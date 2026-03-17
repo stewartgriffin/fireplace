@@ -35,13 +35,12 @@ typedef enum {
 
 /**************************************    GLOBAL FUNCTION DECLARATIONS      ******************************************/
 
-void combustion_controller_init(void);
+void combustion_controller_init(void (*swipe_open)(void), void (*swipe_close)(void), void (*set_flap_position)(uint8_t));
 void combustion_controller_main(void);
 void combustion_controller_set_exhaust_temperature(int32_t input);
 void combustion_controller_startup_requested(void);
 void combustion_controller_end_requested(void);
 combustion_state_t combustion_controller_get_state(void);
-uint8_t combustion_controller_get_flap_position(void);
 
 int16_t combustion_controller_get_dTdt_10s(void);
 int16_t combustion_controller_get_dTdt_20s(void);
